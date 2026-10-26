@@ -1,0 +1,9 @@
+.tooling/
+artifacts/
+**/target/
+**/.env
+**/build/
+**/.dart_tool/
+**/.idea/
+**/.gradle/
+**/.kotlin/

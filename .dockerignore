@@ -1,0 +1,10 @@
+.git
+.tooling
+artifacts
+examples
+docs
+**/node_modules
+**/target
+**/dist
+**/data
+**/.env*
