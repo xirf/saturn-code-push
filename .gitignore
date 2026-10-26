@@ -1,5 +1,5 @@
 .tooling/
-artifacts/
+/artifacts/
 **/target/
 **/.env
 **/build/

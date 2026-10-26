@@ -1,0 +1,23 @@
+services:
+  console:
+    image: node:26-alpine
+    working_dir: /workspace
+    ports:
+      - '127.0.0.1:3001:3001'
+    environment:
+      SATURN_DOCS_ROOT: /repository
+      SATURN_API_ORIGIN: ${SATURN_API_ORIGIN:-http://host.docker.internal:3000}
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    volumes:
+      - .:/workspace:Z
+      - ..:/repository:ro,z
+      - node-modules:/workspace/node_modules
+    command: ['sh', '-c', 'npm ci && npm run dev']
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  node-modules:

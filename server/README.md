@@ -1,30 +1,39 @@
 # Saturn Code Push
 
-An independent Rust/Axum service implementing a tested subset of Shorebird's public code-push protocol. It contains the management/device API, an original dashboard, and basic patch-event analytics. It does not contain or serve the Quick GMJ customer website.
+An independent Rust/Axum service implementing a tested subset of Shorebird's public code-push protocol. It contains the management/device API, an original dashboard, and basic patch-event analytics.
 
-Development hostname: **https://saturn.andka.id**. Planned production hostname: **https://apps.gmjroaming.com**. Both the API and dashboard use the same origin. Quick GMJ remains a separate application at `quick.gmjroaming.com`.
+The API, web console, and public documentation share the same origin. Configure your own HTTPS origin for deployment.
 
 ## Start
 
-From this repository root, with Docker Desktop running:
+Deployment targets Linux with Podman. Development and validation run in Docker containers; no host Rust installation is required. Run these commands from the repository root:
 
-```powershell
-.\server\start.ps1
+```sh
+sh server/init-env.sh
+# Edit server/.env: set PUBLIC_BASE_URL to the HTTPS origin used by your proxy.
+podman compose -f server/compose.yaml build
+bash server/set-login.sh admin
 ```
 
-The helper creates an ignored `server/.env` with a cryptographically random API token on first use. Configure the dashboard's username and password with:
+The environment helper creates an ignored, owner-readable `server/.env` with a random management token. The login helper prompts for a password and confirmation, hashes it inside the container, updates the environment file atomically, and starts the service. Use `CONTAINER_ENGINE=docker bash server/set-login.sh admin` when running with Docker.
 
-```powershell
-.\server\set-login.ps1 -Username admin
+For subsequent rebuilds:
+
+```sh
+podman compose -f server/compose.yaml up -d --build
 ```
 
 The script prompts for a password and confirmation, stores only an Argon2id hash in `server/.env`, and restarts the service. Passwords must contain at least 12 characters. Password resets invalidate existing browser sessions. The dashboard uses eight-hour, server-side sessions with HTTP-only, SameSite=Strict cookies (Secure on HTTPS), origin checks on cookie-authenticated mutations, and sign-in rate limiting. Session tokens are hashed in SQLite and survive container restarts.
 
 `ADMIN_TOKEN` remains for CLI/API use; the browser no longer asks for or stores that token. Keep `.env` and signing keys out of Git. This remains a single-administrator service; it does not provide user registration or multiple roles.
 
-Docker exposes `127.0.0.1:3000`. The existing Cloudflare Tunnel provides HTTPS for `saturn.andka.id`. The container itself speaks HTTP behind the tunnel; no Android certificate installation is needed. `/health` is public; management APIs and analytics require `Authorization: Bearer <ADMIN_TOKEN>`.
+Docker exposes `127.0.0.1:3000`. Configure your own HTTPS reverse proxy or tunnel. The container speaks HTTP on the private side of that proxy. `/health` is public; management APIs and analytics require `Authorization: Bearer <ADMIN_TOKEN>`.
 
-The service runs as an unprivileged container user. The `server_saturn-data` Docker volume holds the SQLite catalog and artifact files. Rebuilds preserve it. Do not run `docker compose down -v` unless you intend to erase releases and patches.
+The service runs as an unprivileged container user with a read-only image filesystem, no Linux capabilities, and a writable data volume. The Compose volume `saturn-data` holds SQLite and artifact files. Its engine-managed name depends on the Compose project name; the existing default is `server_saturn-data`. Keep the project name stable when upgrading. Rebuilds preserve the volume. `compose down -v` deletes it.
+
+SQLite upgrades automatically on startup in one transaction. The migration imports the original catalog into module-owned tables and preserves IDs, object filenames, and browser sessions. It retains the original snapshot as `legacy_catalog_v0` and installs a compatibility guard that prevents the old binary from starting against the migrated database. Back up the database and objects together before upgrading; rolling back the image also requires restoring that backup.
+
+For application developers, [Using Saturn with Shorebird](../docs/usage.md) covers CLI setup, signed baselines, patches, and the differences from hosted Shorebird. [Asset updates](../docs/asset-support.md) documents the separate ZIP publishing and dashboard inspection workflow.
 
 ## Features
 
@@ -34,7 +43,7 @@ The service runs as an unprivileged container user. The `server_saturn-data` Doc
 - Patch checks scoped by app, exact release version, platform, architecture and channel.
 - Promotion, server-driven rollback, and rollforward.
 - Customer-owned patch signing: the CLI signs the reconstructed-artifact hash; the enabled engine verifies it on the device. Use `--public-key-path` for release and `--private-key-path` for patch. Managed signing is not implemented.
-- React/Vite dashboard with Radix Themes components, application/release navigation, patch promotion/rollback dialogs, responsive layouts and Recharts analytics.
+- Nuxt/Vue dashboard with shadcn-vue components, application/release navigation, patch promotion/rollback dialogs, responsive layouts, and ECharts analytics. Pinia Colada owns API state and mutations; Pinia owns UI preferences.
 - Download, first-launch, failure and unique-reporting-install counts, plus daily UTC event totals. These cover the retained client-report window, not total active devices or adoption. Duplicate events count again.
 - A 64 KiB device request body cap, a 100-request/second process-wide device API limit, and bounded telemetry retention (10,000 recent events).
 
@@ -42,39 +51,33 @@ Artifacts are capped at 256 MiB. Download URLs are unguessable bearer capabiliti
 
 ## Validation
 
-```powershell
-cargo test --manifest-path server/Cargo.toml
-cargo clippy --manifest-path server/Cargo.toml --all-targets -- -D warnings
+```sh
+docker compose -f server/compose.dev.yaml run --rm --build server
+docker compose -f server/compose.dev.yaml run --rm server cargo fmt --all -- --check
+docker compose -f server/compose.dev.yaml run --rm server cargo clippy --locked --all-targets -- -D warnings
 ```
 
-`scripts/saturn-contract.dart` exercises the **actual Shorebird Dart client** against the running server, including its response decoders and the two-step artifact uploads. It creates a labelled protocol-fixture app whose bytes are not an executable patch. Run it using the downloaded Shorebird SDK and workspace package configuration:
+The development image includes Rustfmt and Clippy. Cargo registry and build caches use separate named volumes. This environment does not mount the production data volume. Replace `docker` with `podman` to run the same checks on the deployment engine.
 
-```powershell
-$sb = (Get-Content .tooling/shorebird-path.txt -Raw).Trim()
-$rev = (Get-Content "$sb/bin/internal/flutter.version" -Raw).Trim()
-& "$sb/bin/cache/flutter/$rev/bin/cache/dart-sdk/bin/dart.exe" "--packages=$sb/.dart_tool/package_config.json" scripts/saturn-contract.dart
-```
-
-See [the isolated probe](../examples/saturn_probe/README.md) for the real Android test. Tooling used for this pass: Shorebird CLI `1.6.133`, source commit `2bb03a04ad157f014f16fe588f97317de7ad9b02`; Flutter `3.47.8`, revision `baf23dc375905d9103ca4325b062cadb7b8f90e5`; engine `5a3c299daf4061281fe2d8909b690e29cfb4e9c3`.
+See [architecture](ARCHITECTURE.md) for module ownership, entity files, transaction boundaries, and the Nuxt console structure.
 
 ## Production hostname
 
-Deploy this `server/` directory independently of Quick GMJ. Generate a separate production management token. Set `PUBLIC_BASE_URL=https://apps.gmjroaming.com` and configure that hostname's reverse proxy/tunnel to the server port. Build new client releases with `base_url: https://apps.gmjroaming.com` in their bundled `shorebird.yaml`; changing a server variable does not rewrite an already-installed application's endpoint.
+Build the image from the repository root using `server/Dockerfile`; it includes the current console build. Generate a separate production management token. Set `PUBLIC_BASE_URL=https://updates.example.com` and configure that hostname's reverse proxy/tunnel to the server port. `PUBLIC_BASE_URL` must be an origin without a path, credentials, query, or fragment. Build new client releases with `base_url: https://updates.example.com` in their bundled `shorebird.yaml`; changing a server variable does not rewrite an already-installed application's endpoint.
 
 Back up the catalog and object files together while the container is stopped, or use SQLite's backup facility with a coordinated object snapshot. Keep the exact release baselines: patch reconstruction depends on them. Signing private keys live separately and must also be backed up.
 
-This is a single-operator prototype, not a complete Shorebird service. Multi-user roles, OAuth, billing, managed signing, percentage rollouts, durable audit history, background artifact analysis, and iOS validation are not implemented. The catalog is serialized under one process lock into a SQLite snapshot; it is intended for low-volume evaluation. A production implementation should use normalized tables and event ingestion, expiring storage URLs, monitoring, backups and load testing. Building patches still relies on Shorebird-distributed compiler/engine artifacts.
-
+This is a single-operator service, not a complete Shorebird implementation. Multi-user roles, OAuth, billing, managed signing, percentage rollouts, durable audit history, background artifact analysis, and iOS validation are not implemented. Each entity has an owned repository and relational table. SQLite transactions use one connection on Tokio's blocking pool; throughput remains limited by serialized database access and some queries still filter entity lists in memory. Expiring storage URLs, monitoring, operational backups, and load testing remain future work. Building patches still relies on Shorebird-distributed compiler/engine artifacts.
 
 ## Frontend development
 
-The `console/` React application builds to static assets served by Rust. Docker builds both layers in one image. Fonts are bundled locally; no runtime font CDN is needed.
+The `console/` Nuxt application generates static files in `.output/public`, served by Rust. Docker builds both layers in one image. The production image has no Node runtime. Fonts are bundled locally; no runtime font CDN is needed.
 
-```powershell
-cd console
-npm ci
-npm run build
-npm run dev
+See [the console guide](../console/README.md) for feature folders, generated shadcn styles, session-cache handling, the dependency-audit limitation, and Linux browser tests.
+
+```sh
+docker compose -f console/compose.dev.yaml up
+bash scripts/test-console.sh
 ```
 
-`http://127.0.0.1:5173/?preview=1` is a development-only design preview with explicitly labelled illustrative data. Production always uses authenticated server data. Sign-in origin checks are bound to `PUBLIC_BASE_URL`; test real login at that hostname, not the Vite preview origin.
+The development console uses port 3001 and authenticated server data. Its development API must use a `PUBLIC_BASE_URL` matching the browser origin; the proxy preserves origin checks.

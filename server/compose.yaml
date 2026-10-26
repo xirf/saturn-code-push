@@ -8,10 +8,13 @@ services:
     env_file: .env
     environment:
       DATA_DIR: /data
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://saturn.andka.id}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
     volumes:
       - saturn-data:/data
     restart: unless-stopped
+    read_only: true
+    stop_grace_period: 30s
+    pids_limit: 256
     security_opt:
       - no-new-privileges:true
     cap_drop:

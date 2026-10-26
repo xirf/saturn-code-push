@@ -1,0 +1,7 @@
+FROM mcr.microsoft.com/playwright:v1.64.1-noble
+WORKDIR /runner
+RUN npm install --no-save --no-audit --no-fund @playwright/test@1.64.1
+COPY console/playwright.config.ts ./
+COPY console/tests/e2e ./tests/e2e
+ENV PLAYWRIGHT_HTML_OUTPUT_DIR=/runner/playwright-report
+CMD ["npx", "--no-install", "playwright", "test"]

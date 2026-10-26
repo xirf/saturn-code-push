@@ -1,10 +1,14 @@
 .git
 .tooling
-artifacts
+/artifacts
 examples
-docs
+**/app/generated
 **/node_modules
 **/target
 **/dist
+**/.nuxt
+**/.output
+**/playwright-report
+**/test-results
 **/data
 **/.env*
