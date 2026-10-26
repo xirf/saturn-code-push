@@ -1,0 +1,20 @@
+services:
+  code-push:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    ports:
+      - "127.0.0.1:${HOST_PORT:-3000}:3000"
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://saturn.andka.id}
+    volumes:
+      - saturn-data:/data
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  saturn-data:
