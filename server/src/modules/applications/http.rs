@@ -1,14 +1,20 @@
 mod channels;
 use crate::{bootstrap::Runtime, platform::error::Result};
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     extract::{Path, State},
     routing::get,
 };
 use serde_json::Value;
-pub(crate) async fn list_apps(State(runtime): State<Runtime>) -> Result<Json<Value>> {
+pub(crate) async fn list_apps(
+    State(runtime): State<Runtime>,
+    Extension(actor): Extension<crate::modules::identity::api::Actor>,
+) -> Result<Json<Value>> {
     let database = runtime.database.clone();
-    database.call(super::service::list_apps).await.map(Json)
+    database
+        .call(move |c| super::service::list_apps(c, actor.app_id))
+        .await
+        .map(Json)
 }
 
 pub(crate) async fn get_app(

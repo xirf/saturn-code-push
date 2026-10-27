@@ -1,206 +1,99 @@
 use super::*;
-use rusqlite::{Connection, params};
 
-fn legacy_database(directory: &std::path::Path, body: &str) -> Connection {
-    let connection = Connection::open(directory.join("catalog.sqlite3")).unwrap();
-    connection
-        .execute_batch(
-            "CREATE TABLE catalog (
-            id INTEGER PRIMARY KEY CHECK(id = 1),
-            body TEXT NOT NULL
-        );",
-        )
-        .unwrap();
-    connection
-        .execute("INSERT INTO catalog VALUES(1, ?1)", [body])
-        .unwrap();
-    connection
+fn sqlite_fixture(path: &std::path::Path) {
+    let c = rusqlite::Connection::open(path).unwrap();
+    c.execute_batch("PRAGMA user_version=3;
+        CREATE TABLE saturn_sequence(id INTEGER PRIMARY KEY,value INTEGER);
+        INSERT INTO saturn_sequence VALUES(1,9);
+        CREATE TABLE applications_apps(id TEXT,display_name TEXT,created_at TEXT);
+        INSERT INTO applications_apps VALUES('app','Imported','2026-01-01');
+        CREATE TABLE applications_channels(id INTEGER,app_id TEXT,name TEXT);
+        INSERT INTO applications_channels VALUES(1,'app','stable');
+        CREATE TABLE distribution_releases(id INTEGER,app_id TEXT,version TEXT,flutter_revision TEXT,flutter_version TEXT,platforms TEXT,created_at TEXT,updated_at TEXT);
+        INSERT INTO distribution_releases VALUES(2,'app','1.0.0+1','rev',NULL,'{}','2026-01-01','2026-01-01');
+        CREATE TABLE distribution_patches(id INTEGER,release_id INTEGER,number INTEGER,channel_ids TEXT,is_rolled_back INTEGER,created_at TEXT);
+        INSERT INTO distribution_patches VALUES(3,2,1,'[1]',0,'2026-01-01');
+        CREATE TABLE artifacts_binaries(id INTEGER,app_id TEXT,release_id INTEGER,patch_id INTEGER,arch TEXT,platform TEXT,hash TEXT,hash_signature TEXT,size INTEGER,can_sideload INTEGER,signing TEXT,upload_key TEXT,download_key TEXT,uploaded INTEGER);
+        INSERT INTO artifacts_binaries VALUES(9,'app',2,NULL,'x86_64','android','hash',NULL,3,0,'null','upload','download',1);
+        CREATE TABLE artifacts_bundles(id INTEGER,app_id TEXT,release_id INTEGER,patch_id INTEGER,platform TEXT,sha256 TEXT,size INTEGER,upload_key TEXT,download_key TEXT,uploaded INTEGER);
+        INSERT INTO artifacts_bundles VALUES(10,'app',2,3,'android','bundle-hash',3,'asset-upload','asset-download',1);
+        CREATE TABLE distribution_patch_assets(patch_id INTEGER,platform TEXT);
+        INSERT INTO distribution_patch_assets VALUES(3,'android');
+        CREATE TABLE artifact_asset_signatures(bundle_id INTEGER,signature TEXT);
+        INSERT INTO artifact_asset_signatures VALUES(10,'original-signature');
+        CREATE TABLE deployment_reports(id INTEGER,app_id TEXT,release_id INTEGER,report_key TEXT,body TEXT,created_at TEXT,updated_at TEXT);
+        INSERT INTO deployment_reports VALUES(4,'app',2,'run','{\"key\":\"run\",\"repository\":\"owner/repo\",\"commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"source_kind\":\"tag\",\"source_ref\":\"v1\",\"destination\":\"google-play/production\",\"status\":\"published\"}','2026-01-01','2026-01-01');
+    ").unwrap();
 }
-
-#[tokio::test]
-async fn legacy_migration_preserves_records_objects_sessions_and_sequence() {
-    let (_original_directory, original) = dashboard_service();
-    fixture(&original);
-    let patch_id = patch(&original, 1);
-    let binary = artifact(&original, Some(patch_id), &"a".repeat(64), 3);
+#[test]
+fn sqlite_import_preserves_ids_and_does_not_modify_source() {
+    let (dir, s) = service();
+    let path = dir.path().join("old.sqlite3");
+    sqlite_fixture(&path);
+    let before = std::fs::read(&path).unwrap();
+    std::fs::write(s.objects.binary(9), b"abc").unwrap();
+    crate::sqlite_import::import(&s.database, &path).unwrap();
     assert_eq!(
-        upload_bytes(&original, &binary, b"abc").await,
-        StatusCode::OK
+        s.read(|d| Ok(d.apps[0].display_name.clone())).unwrap(),
+        "Imported"
     );
-    let cookie = sign_in(&original).await;
-    original
-        .write(|catalog| {
-            let bundle = modules::artifacts::api::AssetBundle {
-                id: catalog.next(),
-                app_id: "app".into(),
-                release_id: 2,
-                patch_id,
-                platform: "android".into(),
-                sha256: hex::encode(Sha256::digest(b"bundle")),
-                size: 6,
-                upload_key: uid(),
-                download_key: uid(),
-                uploaded: true,
-            };
-            catalog.asset_bundles.push(bundle);
-            catalog.events.push(json!({
-                "received_at": now(),
-                "event": {"app_id": "app", "type": "__patch_download__"},
-            }));
+    assert_eq!(s.read(|d| Ok(d.releases[0].id)).unwrap(), 2);
+    assert_eq!(s.read(|d| Ok(d.sequence)).unwrap(), 10);
+    s.database
+        .transaction(|c| {
+            assert_eq!(
+                c.query_one("SELECT report_key FROM deployment_reports WHERE id=4", &[])
+                    .map_err(internal)?
+                    .get::<_, String>(0),
+                "run"
+            );
+            assert_eq!(crate::platform::database::next_id(c)?, 11);
+            assert_eq!(
+                c.query_one(
+                    "SELECT signature FROM artifact_asset_signatures WHERE bundle_id=10",
+                    &[]
+                )
+                .map_err(internal)?
+                .get::<_, String>(0),
+                "original-signature"
+            );
+            assert_eq!(
+                c.query_one(
+                    "SELECT platform FROM distribution_patch_assets WHERE patch_id=3",
+                    &[]
+                )
+                .map_err(internal)?
+                .get::<_, String>(0),
+                "android"
+            );
             Ok(())
         })
         .unwrap();
-    let body = original
-        .read(|catalog| serde_json::to_value(catalog).map_err(internal))
+    assert_eq!(std::fs::read(s.objects.binary(9)).unwrap(), b"abc");
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert!(crate::sqlite_import::import(&s.database, &path).is_err());
+}
+#[test]
+fn failed_import_rolls_back_catalog() {
+    let (dir, s) = service();
+    let path = dir.path().join("old.sqlite3");
+    sqlite_fixture(&path);
+    let c = rusqlite::Connection::open(&path).unwrap();
+    c.execute("UPDATE distribution_releases SET app_id='missing'", [])
         .unwrap();
-    let session: (String, String, i64) = original
-        .database
-        .transaction(|connection| {
-            connection
-                .query_row(
-                    "SELECT token_hash, identity, expires_at FROM dashboard_sessions",
-                    [],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-                )
-                .map_err(internal)
-        })
-        .unwrap();
-
-    let migrated_directory = tempfile::tempdir().unwrap();
-    let connection = legacy_database(migrated_directory.path(), &body.to_string());
-    auth::initialize(&connection).unwrap();
-    connection
-        .execute(
-            "INSERT INTO dashboard_sessions VALUES(?1, ?2, ?3)",
-            params![session.0, session.1, session.2],
-        )
-        .unwrap();
-    drop(connection);
-    let objects = migrated_directory.path().join("objects");
-    std::fs::create_dir(&objects).unwrap();
-    std::fs::copy(
-        original.objects.binary(binary.id),
-        objects.join(binary.id.to_string()),
-    )
-    .unwrap();
-    let bundle_id = body["asset_bundles"][0]["id"].as_i64().unwrap();
-    std::fs::write(objects.join(format!("asset-{bundle_id}")), b"bundle").unwrap();
-
-    let mut migrated = Service::open(
-        migrated_directory.path().into(),
-        original.base_url.clone(),
-        TOKEN.into(),
-    )
-    .unwrap();
-    migrated.dashboard = original.dashboard.clone();
-    let after = migrated
-        .read(|catalog| serde_json::to_value(catalog).map_err(internal))
-        .unwrap();
-    assert_eq!(after, body);
-    assert_eq!(
-        browser(
-            &migrated,
-            "GET",
-            "/auth/session",
-            json!({}),
-            Some(&cookie),
-            None
-        )
-        .await
-        .status(),
-        StatusCode::OK,
-    );
-    let response = router(migrated.clone())
-        .oneshot(
-            Request::builder()
-                .uri(format!("/objects/{}", binary.download_key))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.into_body().collect().await.unwrap().to_bytes(),
-        "abc"
-    );
-    migrated
-        .database
-        .transaction(|connection| {
-            let old_writer_exists: bool = connection
-                .query_row(
-                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='catalog' AND type='table')",
-                    [],
-                    |row| row.get(0),
-                )
+    drop(c);
+    assert!(crate::sqlite_import::import(&s.database, &path).is_err());
+    assert!(s.read(|d| Ok(d.apps.is_empty())).unwrap());
+}
+#[test]
+fn newer_schema_is_rejected() {
+    let (_dir, s) = service();
+    s.database
+        .transaction(|c| {
+            c.execute("INSERT INTO saturn_schema(version) VALUES(999)", &[])
                 .map_err(internal)?;
-            assert!(!old_writer_exists);
-            // Simulate the old binary's startup: its CREATE is harmless and its
-            // catalog deserialization fails before any request can mutate files.
-            connection.execute_batch(
-                "CREATE TABLE IF NOT EXISTS catalog(id INTEGER PRIMARY KEY, body TEXT NOT NULL);",
-            ).map_err(internal)?;
-            let guard: String = connection
-                .query_row("SELECT body FROM catalog WHERE id=1", [], |row| row.get(0))
-                .map_err(internal)?;
-            assert!(serde_json::from_str::<Value>(&guard).is_err());
-            let next = crate::platform::database::next_id(connection)?;
-            assert!(next > bundle_id);
             Ok(())
         })
         .unwrap();
-    drop(migrated);
-    Service::open(
-        migrated_directory.path().into(),
-        original.base_url,
-        TOKEN.into(),
-    )
-    .unwrap();
-}
-
-#[test]
-fn corrupt_legacy_catalog_rolls_back_the_entire_migration() {
-    let directory = tempfile::tempdir().unwrap();
-    drop(legacy_database(directory.path(), "invalid JSON"));
-    assert!(
-        Service::open(
-            directory.path().into(),
-            "http://localhost:3000".into(),
-            TOKEN.into()
-        )
-        .is_err()
-    );
-    let connection = Connection::open(directory.path().join("catalog.sqlite3")).unwrap();
-    let version: i64 = connection
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .unwrap();
-    let body: String = connection
-        .query_row("SELECT body FROM catalog", [], |row| row.get(0))
-        .unwrap();
-    assert_eq!(version, 0);
-    assert_eq!(body, "invalid JSON");
-    let new_table_exists: bool = connection
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='applications_apps')",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert!(!new_table_exists);
-}
-
-#[test]
-fn newer_schema_is_rejected_without_modification() {
-    let directory = tempfile::tempdir().unwrap();
-    let connection = Connection::open(directory.path().join("catalog.sqlite3")).unwrap();
-    connection.pragma_update(None, "user_version", 2).unwrap();
-    drop(connection);
-    assert!(
-        Service::open(
-            directory.path().into(),
-            "http://localhost:3000".into(),
-            TOKEN.into()
-        )
-        .is_err()
-    );
+    assert!(s.database.transaction(crate::migration::run).is_err());
 }

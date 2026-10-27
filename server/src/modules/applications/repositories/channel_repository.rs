@@ -1,46 +1,34 @@
 use super::super::models::Channel;
 use crate::platform::error::{Result, internal};
-use rusqlite::{Connection, params};
+use crate::sql_params as params;
+use postgres::Transaction as Connection;
 
-pub(in crate::modules::applications) fn initialize(connection: &Connection) -> Result<()> {
+pub(in crate::modules::applications) fn list(
+    connection: &mut Connection<'_>,
+) -> Result<Vec<Channel>> {
     connection
-        .execute_batch(
-            "CREATE TABLE IF NOT EXISTS applications_channels (
-                id INTEGER PRIMARY KEY,
-                app_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                FOREIGN KEY(app_id) REFERENCES applications_apps(id),
-                UNIQUE(app_id,name)
-            );",
-        )
-        .map_err(internal)
-}
-
-pub(in crate::modules::applications) fn list(connection: &Connection) -> Result<Vec<Channel>> {
-    let mut statement = connection
-        .prepare(
+        .query(
             "SELECT
                 id,
                 app_id,
                 name
-         FROM applications_channels ORDER BY rowid",
+         FROM applications_channels ORDER BY id",
+            &[],
         )
-        .map_err(internal)?;
-    let rows = statement
-        .query_map([], |row| {
+        .map_err(internal)?
+        .iter()
+        .map(|row| {
             Ok(Channel {
-                id: row.get(0)?,
-                app_id: row.get(1)?,
-                name: row.get(2)?,
+                id: row.try_get(0).map_err(internal)?,
+                app_id: row.try_get(1).map_err(internal)?,
+                name: row.try_get(2).map_err(internal)?,
             })
         })
-        .map_err(internal)?;
-    rows.collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(internal)
+        .collect()
 }
 
 pub(in crate::modules::applications) fn save(
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     entity: &Channel,
 ) -> Result<()> {
     connection
@@ -49,7 +37,7 @@ pub(in crate::modules::applications) fn save(
                 id,
                 app_id,
                 name
-            ) VALUES (?1, ?2, ?3)
+            ) VALUES ($1, $2, $3)
             ON CONFLICT(id) DO UPDATE SET
                 app_id = excluded.app_id,
                 name = excluded.name",

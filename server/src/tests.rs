@@ -20,7 +20,7 @@ use modules::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 use tower::ServiceExt;
 
 mod support;
@@ -32,3 +32,13 @@ mod management;
 mod migration;
 mod security;
 mod telemetry;
+
+mod deployments;
+
+mod accounts;
+
+mod setup;
+
+mod github;
+
+mod object_storage;

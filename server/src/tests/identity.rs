@@ -1,6 +1,6 @@
 use super::*;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn password_login_and_csrf_protected_mutation() {
     let (_dir, s) = dashboard_service();
     let wrong = browser(
@@ -52,9 +52,9 @@ async fn password_login_and_csrf_protected_mutation() {
         .database
         .transaction(|connection| {
             connection
-                .query_row("SELECT token_hash FROM dashboard_sessions", [], |row| {
-                    row.get(0)
-                })
+                .query_one("SELECT token_hash FROM dashboard_sessions", &[])
+                .map_err(internal)?
+                .try_get(0)
                 .map_err(internal)
         })
         .unwrap();
@@ -62,7 +62,7 @@ async fn password_login_and_csrf_protected_mutation() {
     assert!(!cookie.contains(&stored));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn logout_revokes_the_session_and_clears_cookie() {
     let (_dir, s) = dashboard_service();
     let cookie = sign_in(&s).await;
@@ -103,12 +103,12 @@ async fn logout_revokes_the_session_and_clears_cookie() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sessions_survive_restarts_and_expire() {
     let (dir, s) = dashboard_service();
     let cookie = sign_in(&s).await;
-    let mut restarted = Service::open(dir.path().into(), s.base_url.clone(), TOKEN.into()).unwrap();
-    restarted.dashboard = s.dashboard.clone();
+    let restarted = Service::open(dir.path().into(), s.base_url.clone(), TOKEN.into()).unwrap();
+
     assert_eq!(
         browser(
             &restarted,
@@ -126,7 +126,7 @@ async fn sessions_survive_restarts_and_expire() {
         .database
         .transaction(|connection| {
             connection
-                .execute("UPDATE dashboard_sessions SET expires_at=0", [])
+                .execute("UPDATE dashboard_sessions SET expires_at=0", &[])
                 .map_err(internal)?;
             Ok(())
         })
@@ -146,17 +146,22 @@ async fn sessions_survive_restarts_and_expire() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn password_reset_invalidates_existing_sessions() {
-    let (_dir, mut s) = dashboard_service();
+    let (_dir, s) = dashboard_service();
     let cookie = sign_in(&s).await;
-    s.dashboard = Some(Arc::new(
-        auth::Credentials::new(
-            "admin".into(),
-            auth::hash_password("a-different-password-42").unwrap(),
-        )
-        .unwrap(),
-    ));
+    s.database
+        .transaction(|c| {
+            c.execute("DELETE FROM dashboard_sessions", &[])
+                .map_err(internal)?;
+            c.execute(
+                "UPDATE identity_accounts SET password_hash=$1",
+                &[&auth::hash_password("a-different-password-42")?],
+            )
+            .map_err(internal)?;
+            Ok(())
+        })
+        .unwrap();
     assert_eq!(
         browser(&s, "GET", "/admin/state", json!({}), Some(&cookie), None)
             .await
@@ -165,7 +170,7 @@ async fn password_reset_invalidates_existing_sessions() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn login_has_origin_and_attempt_limits() {
     let (_dir, s) = dashboard_service();
     assert_eq!(

@@ -1,8 +1,9 @@
-use crate::platform::error::internal;
+use crate::platform::{error::internal, objects::Kind};
 use crate::{
     bootstrap::Runtime,
     platform::error::{Result, bad},
 };
+use axum::response::{IntoResponse, Redirect};
 use axum::{
     Json,
     extract::{Multipart, Path, State},
@@ -48,11 +49,20 @@ pub(crate) async fn upload(
         .is_none()
         .then_some(artifact.hash.as_str());
     let temporary = upload.finish(expected_hash).await?;
-    let destination = runtime.objects.binary(artifact.id);
+    let location = runtime.objects.destination(
+        Kind::Binary,
+        &artifact.app_id,
+        artifact.release_id,
+        artifact.patch_id,
+        artifact.id,
+    );
     super::super::upload::publish(
         runtime.database,
         temporary,
-        destination,
+        runtime.objects,
+        location,
+        Kind::Binary,
+        artifact.id,
         move |connection| super::super::service::complete_binary(connection, artifact.id),
     )
     .await?;
@@ -68,7 +78,20 @@ pub(crate) async fn download(
         .database
         .call(move |connection| super::super::service::download_binary(connection, &key))
         .await?;
-    let response = ServeFile::new(runtime.objects.binary(id))
+    let location = runtime
+        .objects
+        .location(&runtime.database, Kind::Binary, id)
+        .await?;
+    if let Some(s3) = &location.remote {
+        let mut response =
+            Redirect::temporary(&s3.signed_url(&location.key).await?).into_response();
+        response.headers_mut().insert(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-store"),
+        );
+        return Ok(response);
+    }
+    let response = ServeFile::new(runtime.objects.local_path(&location))
         .oneshot(request)
         .await
         .map_err(internal)?;

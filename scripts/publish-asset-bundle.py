@@ -2,6 +2,9 @@
 """Publish changed Flutter assets from Android APK or AAB build artifacts."""
 
 import argparse
+import base64
+import subprocess
+import tempfile
 import hashlib
 import io
 import json
@@ -56,6 +59,9 @@ def main():
     parser.add_argument('--patch-id', required=True, type=int)
     parser.add_argument('--server', default='http://127.0.0.1:3000')
     parser.add_argument('--output', default='saturn-assets.zip')
+    parser.add_argument('--asset-signing-key', help='Separate Ed25519 PEM private key; public key must be pinned in the app baseline')
+    parser.add_argument('--release-version')
+    parser.add_argument('--patch-number', type=int)
     parser.add_argument('--publish', action='store_true')
     parser.add_argument('--allow-manifest-only', action='store_true',
                         help='Allow a bundle with no changed asset file (for deletions)')
@@ -75,8 +81,21 @@ def main():
         raise SystemExit('Set SATURN_API_TOKEN before --publish')
     endpoint = (args.server.rstrip('/') + '/api/v1/apps/' + args.app_id +
                 '/patches/' + str(args.patch_id) + '/asset-bundle')
+    if not args.asset_signing_key or not args.release_version or not args.patch_number or args.patch_number < 1:
+        raise SystemExit('--publish requires --asset-signing-key, --release-version and positive --patch-number')
+    manifest = json.dumps(['saturn-assets-v1', args.app_id, args.release_version,
+                           args.patch_number, 'android', digest, len(payload)],
+                          ensure_ascii=False, separators=(',', ':')).encode()
+    with tempfile.TemporaryDirectory() as directory:
+        message = os.path.join(directory, 'manifest')
+        with open(message, 'wb') as file:
+            file.write(manifest)
+        signature = subprocess.check_output(['openssl', 'pkeyutl', '-sign', '-rawin',
+                                            '-inkey', args.asset_signing_key, '-in', message])
+    if len(signature) != 64:
+        raise SystemExit('Expected a 64-byte Ed25519 signature')
     metadata = json.dumps({'platform': 'android', 'sha256': digest,
-                           'size': len(payload)}).encode()
+                           'size': len(payload), 'signature': base64.b64encode(signature).decode()}).encode()
     registered = request(endpoint, 'POST', token, metadata, 'application/json')
     upload_url = registered['upload_url']
     # The public URL may point through a tunnel. Upload to the chosen local

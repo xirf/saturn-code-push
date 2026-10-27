@@ -1,10 +1,11 @@
 use crate::platform::{
     database::Database,
     error::{Result, bad, internal},
+    objects::{Kind, Location, ObjectStore},
 };
-use rusqlite::Connection;
+use postgres::Transaction as Connection;
 use sha2::{Digest, Sha256};
-use std::{cell::Cell, path::PathBuf};
+use std::cell::Cell;
 use tempfile::NamedTempFile;
 use tokio::io::AsyncWriteExt;
 
@@ -65,41 +66,66 @@ impl Upload {
 pub(super) async fn publish<F>(
     database: Database,
     temporary: NamedTempFile,
-    destination: PathBuf,
+    objects: ObjectStore,
+    location: Location,
+    kind: Kind,
+    id: i64,
     update: F,
 ) -> Result<()>
 where
-    F: FnOnce(&Connection) -> Result<()> + Send + 'static,
+    F: FnOnce(&mut Connection<'_>) -> Result<()> + Send + 'static,
 {
-    tokio::task::spawn_blocking(move || {
-        let published = Cell::new(false);
-        database.transaction_with_cleanup(
-            |connection| {
-                // The transaction validates the one-use upload before publishing bytes.
-                update(connection)?;
-                // A crash before the SQLite commit can leave a file for a pending row.
-                // Replacing it is safe here: update rejected any already-published row.
-                let file = temporary
-                    .persist(&destination)
-                    .map_err(|error| internal(error.error))?;
-                published.set(true);
-                file.sync_all().map_err(internal)?;
-                #[cfg(unix)]
-                if let Some(parent) = destination.parent() {
-                    std::fs::File::open(parent)
-                        .and_then(|directory| directory.sync_all())
-                        .map_err(internal)?;
-                }
-                Ok(())
-            },
-            || {
-                if published.get()
-                    && let Err(error) = std::fs::remove_file(&destination)
-                {
-                    tracing::error!(%error, "Failed to remove uncommitted upload");
-                }
-            },
-        )
+    // Detach publication from request cancellation, including remote transfer and cleanup.
+    tokio::spawn(async move {
+        if let Some(s3) = &location.remote {
+            s3.upload(&location.key, temporary.path()).await?;
+        }
+        let handle = tokio::runtime::Handle::current();
+        tokio::task::spawn_blocking(move || {
+            let destination = objects.local_path(&location);
+            let published = Cell::new(false);
+            database.transaction_with_cleanup(
+                |connection| {
+                    // The transaction validates the one-use upload before publishing bytes.
+                    update(connection)?;
+                    // A crash before the database commit can leave a file for a pending row.
+                    // Replacing it is safe here: update rejected any already-published row.
+                    location.save(connection, kind, id)?;
+                    if location.remote.is_some() {
+                        return Ok(());
+                    }
+                    if let Some(parent) = destination.parent() {
+                        std::fs::create_dir_all(parent).map_err(internal)?;
+                    }
+                    let file = temporary
+                        .persist(&destination)
+                        .map_err(|error| internal(error.error))?;
+                    published.set(true);
+                    file.sync_all().map_err(internal)?;
+                    #[cfg(unix)]
+                    if let Some(parent) = destination.parent() {
+                        std::fs::File::open(parent)
+                            .and_then(|directory| directory.sync_all())
+                            .map_err(internal)?;
+                    }
+                    Ok(())
+                },
+                || {
+                    if let Some(s3) = &location.remote
+                        && handle.block_on(s3.delete(&location.key)).is_err()
+                    {
+                        tracing::error!("Failed to remove uncommitted S3 upload");
+                    }
+                    if published.get()
+                        && let Err(error) = std::fs::remove_file(&destination)
+                    {
+                        tracing::error!(%error, "Failed to remove uncommitted upload");
+                    }
+                },
+            )
+        })
+        .await
+        .map_err(internal)?
     })
     .await
     .map_err(internal)?

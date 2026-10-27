@@ -1,6 +1,6 @@
-//! Fixed single-operator responses required by the supported CLI protocol.
+//! Self-hosted organization responses required by the supported CLI protocol.
 use crate::bootstrap::Runtime;
-use axum::{Json, Router, routing::get};
+use axum::{Extension, Json, Router, routing::get};
 use serde_json::{Value, json};
 
 pub(super) fn routes(runtime: &Runtime) -> Router<Runtime> {
@@ -11,11 +11,13 @@ pub(super) fn routes(runtime: &Runtime) -> Router<Runtime> {
     super::policy::management(runtime, routes)
 }
 
-async fn current_user() -> Json<Value> {
+async fn current_user(
+    Extension(actor): Extension<crate::modules::identity::api::Actor>,
+) -> Json<Value> {
     Json(json!({
         "id": 1,
         "email": "operator@localhost",
-        "display_name": "Saturn operator",
+        "display_name": actor.name,
         "has_active_subscription": true,
         "jwt_issuer": "saturn",
     }))

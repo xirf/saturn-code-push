@@ -10,7 +10,7 @@ For asset changes, Saturn adds a separate ZIP publisher and the `saturn_assets` 
 | ----------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | Build commands          | `shorebird release` and `shorebird patch`                  | The same CLI command families, directed at Saturn                                                     |
 | Management server       | Shorebird's hosted service                                 | Your Saturn origin                                                                                    |
-| CLI credentials         | Your Shorebird credentials/API key                         | Saturn's `ADMIN_TOKEN`, supplied as `SHOREBIRD_TOKEN`                                                 |
+| CLI credentials         | Your Shorebird credentials/API key                         | An app-scoped Publish API key, supplied as `SHOREBIRD_TOKEN`                                                 |
 | Dashboard access        | Hosted account                                             | Saturn administrator username/password                                                                |
 | Dart patches            | Built by Shorebird tooling                                 | Built by Shorebird tooling and served by Saturn                                                       |
 | Asset changes           | Asset patching is not supported by the standard patch flow | A separate overlay package and ZIP publishing step                                                    |
@@ -49,7 +49,7 @@ In the Bash session that runs your build:
 ```bash
 export SATURN_SERVER='https://updates.example.com'
 
-read -r -s -p 'Saturn ADMIN_TOKEN: ' SATURN_API_TOKEN
+read -r -s -p 'Saturn Publish API key: ' SATURN_API_TOKEN
 printf '\n'
 export SATURN_API_TOKEN
 

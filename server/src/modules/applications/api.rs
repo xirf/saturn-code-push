@@ -1,23 +1,19 @@
 pub(crate) use super::models::{App, Channel};
 use super::repositories::{app_repository, channel_repository};
 use crate::platform::error::Result;
-use rusqlite::Connection;
+use postgres::Transaction as Connection;
 
-pub(crate) fn initialize(connection: &Connection) -> Result<()> {
-    super::repositories::initialize(connection)
-}
-
-pub(crate) fn apps(connection: &Connection) -> Result<Vec<App>> {
+pub(crate) fn apps(connection: &mut Connection<'_>) -> Result<Vec<App>> {
     app_repository::list(connection)
 }
 
-pub(crate) fn channels(connection: &Connection) -> Result<Vec<Channel>> {
+pub(crate) fn channels(connection: &mut Connection<'_>) -> Result<Vec<Channel>> {
     channel_repository::list(connection)
 }
 
 /// Used by the schema migration and test fixtures, never by request handlers.
 pub(crate) fn import(
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     apps: Vec<App>,
     channels: Vec<Channel>,
 ) -> Result<()> {
@@ -30,6 +26,6 @@ pub(crate) fn import(
     Ok(())
 }
 
-pub(crate) fn require(connection: &Connection, id: &str) -> Result<()> {
+pub(crate) fn require(connection: &mut Connection<'_>, id: &str) -> Result<()> {
     app_repository::find(connection, id).map(|_| ())
 }

@@ -1,9 +1,11 @@
 use super::super::dto::{AssetCheck, RegisterBundle};
 use super::super::{service, upload::Upload};
+use crate::platform::objects::Kind;
 use crate::{
     bootstrap::Runtime,
     platform::error::{Result, bad, internal},
 };
+use axum::response::{IntoResponse, Redirect};
 use axum::{
     Json,
     body::Body,
@@ -45,11 +47,20 @@ pub(crate) async fn upload(
         }
     }
     let temporary = upload.finish(Some(&bundle.sha256)).await?;
-    let destination = runtime.objects.bundle(bundle.id);
+    let location = runtime.objects.destination(
+        Kind::Bundle,
+        &bundle.app_id,
+        bundle.release_id,
+        Some(bundle.patch_id),
+        bundle.id,
+    );
     super::super::upload::publish(
         runtime.database,
         temporary,
-        destination,
+        runtime.objects,
+        location,
+        Kind::Bundle,
+        bundle.id,
         move |connection| service::complete_bundle(connection, bundle.id),
     )
     .await?;
@@ -65,7 +76,20 @@ pub(crate) async fn download(
         .database
         .call(move |connection| service::download_bundle(connection, &key))
         .await?;
-    let response = ServeFile::new(runtime.objects.bundle(id))
+    let location = runtime
+        .objects
+        .location(&runtime.database, Kind::Bundle, id)
+        .await?;
+    if let Some(s3) = &location.remote {
+        let mut response =
+            Redirect::temporary(&s3.signed_url(&location.key).await?).into_response();
+        response.headers_mut().insert(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-store"),
+        );
+        return Ok(response);
+    }
+    let response = ServeFile::new(runtime.objects.local_path(&location))
         .oneshot(request)
         .await
         .map_err(internal)?;

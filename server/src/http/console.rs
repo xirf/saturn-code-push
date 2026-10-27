@@ -13,6 +13,7 @@ pub(super) fn routes(runtime: &Runtime) -> axum::Router<Runtime> {
     Router::new()
         .route("/", get(index))
         .route("/login", get(index))
+        .route("/setup", get(index))
         .route("/applications", get(index))
         .route("/releases", get(index))
         .route("/releases/{release}", get(index))

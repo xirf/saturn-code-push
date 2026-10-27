@@ -1,14 +1,49 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: saturn
+      POSTGRES_DB: saturn
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in server/.env}
+    volumes:
+      - saturn-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saturn -d saturn"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
   code-push:
     build:
       context: ..
       dockerfile: server/Dockerfile
     ports:
       - "127.0.0.1:${HOST_PORT:-3000}:3000"
-    env_file: .env
     environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in deployment settings or server/.env}
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      GITHUB_APP_PRIVATE_KEY_FILE: ${GITHUB_APP_PRIVATE_KEY_FILE:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+      RUST_LOG: ${RUST_LOG:-info}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET:-}
+      STORAGE_S3_REGION: ${STORAGE_S3_REGION:-}
+      STORAGE_S3_ENDPOINT: ${STORAGE_S3_ENDPOINT:-}
+      STORAGE_S3_PREFIX: ${STORAGE_S3_PREFIX:-saturn}
+      STORAGE_S3_ALLOW_HTTP: ${STORAGE_S3_ALLOW_HTTP:-false}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
       DATA_DIR: /data
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - saturn-data:/data
     restart: unless-stopped
@@ -21,3 +56,4 @@ services:
       - ALL
 volumes:
   saturn-data:
+  saturn-postgres:

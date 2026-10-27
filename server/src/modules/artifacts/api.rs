@@ -1,23 +1,19 @@
 pub(crate) use super::models::{Artifact, AssetBundle};
 use super::repositories::{artifact_repository, asset_bundle_repository};
 use crate::platform::error::Result;
-use rusqlite::Connection;
+use postgres::Transaction as Connection;
 
-pub(crate) fn initialize(connection: &Connection) -> Result<()> {
-    super::repositories::initialize(connection)
-}
-
-pub(crate) fn artifacts(connection: &Connection) -> Result<Vec<Artifact>> {
+pub(crate) fn artifacts(connection: &mut Connection<'_>) -> Result<Vec<Artifact>> {
     artifact_repository::list(connection)
 }
 
-pub(crate) fn asset_bundles(connection: &Connection) -> Result<Vec<AssetBundle>> {
+pub(crate) fn asset_bundles(connection: &mut Connection<'_>) -> Result<Vec<AssetBundle>> {
     asset_bundle_repository::list(connection)
 }
 
 /// Used by the schema migration and test fixtures, never by request handlers.
 pub(crate) fn import(
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     artifacts: Vec<Artifact>,
     asset_bundles: Vec<AssetBundle>,
 ) -> Result<()> {
@@ -52,4 +48,15 @@ pub(crate) fn to_wire(base_url: &str, artifact: &Artifact, upload: bool) -> Valu
         "url": format!("{base_url}/{path}/{key}"),
         "upload_method": "multipart",
     })
+}
+
+pub(crate) fn has_asset_signature(connection: &mut Connection<'_>, bundle_id: i64) -> Result<bool> {
+    connection
+        .query_one(
+            "SELECT EXISTS(SELECT 1 FROM artifact_asset_signatures WHERE bundle_id=$1)",
+            crate::sql_params![bundle_id],
+        )
+        .map_err(crate::platform::error::internal)?
+        .try_get(0)
+        .map_err(crate::platform::error::internal)
 }

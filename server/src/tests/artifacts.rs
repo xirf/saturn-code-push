@@ -1,6 +1,6 @@
 use super::*;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn asset_inspection_requires_auth_and_checks_app_patch_bundle_ownership() {
     use std::io::{Cursor, Write};
     use zip::{ZipWriter, write::SimpleFileOptions};
@@ -105,7 +105,7 @@ async fn asset_inspection_requires_auth_and_checks_app_patch_bundle_ownership() 
     assert_eq!(status, StatusCode::CONFLICT);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn uploads_check_hash_size_and_are_immutable() {
     let (_dir, s) = service();
     fixture(&s);
@@ -114,10 +114,7 @@ async fn uploads_check_hash_size_and_are_immutable() {
     assert_eq!(upload_bytes(&s, &a, b"abcd").await, StatusCode::BAD_REQUEST);
     assert_eq!(upload_bytes(&s, &a, b"abc").await, StatusCode::OK);
     assert_eq!(upload_bytes(&s, &a, b"abc").await, StatusCode::NOT_FOUND);
-    assert_eq!(
-        std::fs::read(s.objects.directory().join(a.id.to_string())).unwrap(),
-        b"abc"
-    );
+    assert_eq!(std::fs::read(binary_path(&s, a.id).await).unwrap(), b"abc");
     assert!(
         std::fs::read_dir(s.objects.directory()).unwrap().all(|p| !p
             .unwrap()
@@ -127,7 +124,7 @@ async fn uploads_check_hash_size_and_are_immutable() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn artifact_download_supports_byte_ranges() {
     let (_dir, s) = service();
     fixture(&s);
@@ -147,7 +144,7 @@ async fn artifact_download_supports_byte_ranges() {
     assert_eq!(r.into_body().collect().await.unwrap().to_bytes(), "cde");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn asset_bundle_is_scoped_to_running_patch_and_rolls_back() {
     let (_dir, s) = service();
     fixture(&s);
@@ -156,7 +153,7 @@ async fn asset_bundle_is_scoped_to_running_patch_and_rolls_back() {
             id: 3,
             release_id: 2,
             number: 1,
-            channel_ids: vec![1],
+            channel_ids: vec![],
             is_rolled_back: false,
             created_at: now(),
         });
@@ -170,7 +167,7 @@ async fn asset_bundle_is_scoped_to_running_patch_and_rolls_back() {
         &s,
         "POST",
         "/api/v1/apps/app/patches/3/asset-bundle",
-        json!({"sha256":digest,"size":bytes.len(),"platform":"android"}),
+        json!({"sha256":digest,"size":bytes.len(),"platform":"android", "signature": "A".repeat(86) + "=="}),
         true,
     )
     .await;
@@ -193,11 +190,45 @@ async fn asset_bundle_is_scoped_to_running_patch_and_rolls_back() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+    s.write(|d| {
+        d.patches
+            .iter_mut()
+            .find(|p| p.id == 3)
+            .unwrap()
+            .channel_ids = vec![1];
+        Ok(())
+    })
+    .unwrap();
     let path = "/api/v1/assets/check?app_id=app&release_version=1.0.0%2B1&channel=stable&platform=android&patch_number=1";
     let (status, selected) = call(&s, "GET", path, json!({}), false).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(selected["asset_bundle_available"], true);
     assert_eq!(selected["sha256"], digest);
+    assert_eq!(selected["signature"], "A".repeat(86) + "==");
+    assert_eq!(
+        serde_json::from_str::<Value>(selected["manifest"].as_str().unwrap()).unwrap(),
+        json!([
+            "saturn-assets-v1",
+            "app",
+            "1.0.0+1",
+            1,
+            "android",
+            digest,
+            bytes.len()
+        ])
+    );
+    assert_eq!(
+        call(
+            &s,
+            "POST",
+            "/api/v1/apps/app/patches/3/asset-bundle",
+            json!({"sha256":digest,"size":bytes.len(),"platform":"android"}),
+            true
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
     let download_key = selected["download_url"]
         .as_str()
         .unwrap()

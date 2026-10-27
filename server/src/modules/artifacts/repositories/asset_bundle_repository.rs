@@ -1,91 +1,41 @@
 use super::super::models::AssetBundle;
 use crate::platform::error::{Result, internal, missing};
-use rusqlite::{Connection, OptionalExtension, params};
+use crate::sql_params as params;
+use postgres::Transaction as Connection;
 
 pub(in crate::modules::artifacts) fn find(
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     app: &str,
     patch: i64,
     id: i64,
 ) -> Result<AssetBundle> {
-    connection
-        .query_row(
-            "SELECT id, app_id, release_id, patch_id, platform, sha256, size,
-                    upload_key, download_key, uploaded
-             FROM artifacts_bundles WHERE id = ?1 AND app_id = ?2 AND patch_id = ?3",
-            params![id, app, patch],
-            |row| {
-                Ok(AssetBundle {
-                    id: row.get(0)?,
-                    app_id: row.get(1)?,
-                    release_id: row.get(2)?,
-                    patch_id: row.get(3)?,
-                    platform: row.get(4)?,
-                    sha256: row.get(5)?,
-                    size: row.get::<_, u32>(6)? as u64,
-                    upload_key: row.get(7)?,
-                    download_key: row.get(8)?,
-                    uploaded: row.get(9)?,
-                })
-            },
-        )
-        .optional()
-        .map_err(internal)?
+    list(connection)?
+        .into_iter()
+        .find(|b| b.id == id && b.app_id == app && b.patch_id == patch)
         .ok_or_else(missing)
 }
 
-pub(in crate::modules::artifacts) fn initialize(connection: &Connection) -> Result<()> {
-    connection
-        .execute_batch(
-            "CREATE TABLE IF NOT EXISTS artifacts_bundles (
-                id INTEGER PRIMARY KEY,
-                app_id TEXT NOT NULL,
-                release_id INTEGER NOT NULL,
-                patch_id INTEGER NOT NULL,
-                platform TEXT NOT NULL,
-                sha256 TEXT NOT NULL,
-                size INTEGER NOT NULL CHECK (size > 0),
-                upload_key TEXT NOT NULL,
-                download_key TEXT NOT NULL,
-                uploaded INTEGER NOT NULL CHECK (uploaded IN (0, 1)),
-                FOREIGN KEY(app_id) REFERENCES applications_apps(id),
-                FOREIGN KEY(release_id,app_id) REFERENCES distribution_releases(id,app_id),
-                FOREIGN KEY(patch_id,release_id) REFERENCES distribution_patches(id,release_id),
-                UNIQUE(patch_id,platform),
-                UNIQUE(upload_key),
-                UNIQUE(download_key)
-            );",
-        )
-        .map_err(internal)
-}
-
-pub(in crate::modules::artifacts) fn list(connection: &Connection) -> Result<Vec<AssetBundle>> {
-    let mut statement = connection.prepare(
-        "SELECT id, app_id, release_id, patch_id, platform, sha256, size, upload_key, download_key, uploaded
-         FROM artifacts_bundles ORDER BY rowid",
-    ).map_err(internal)?;
-    let rows = statement
-        .query_map([], |row| {
-            Ok(AssetBundle {
-                id: row.get(0)?,
-                app_id: row.get(1)?,
-                release_id: row.get(2)?,
-                patch_id: row.get(3)?,
-                platform: row.get(4)?,
-                sha256: row.get(5)?,
-                size: row.get::<_, u32>(6)? as u64,
-                upload_key: row.get(7)?,
-                download_key: row.get(8)?,
-                uploaded: row.get(9)?,
-            })
-        })
-        .map_err(internal)?;
-    rows.collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(internal)
+pub(in crate::modules::artifacts) fn list(
+    connection: &mut Connection<'_>,
+) -> Result<Vec<AssetBundle>> {
+    connection.query("SELECT id, app_id, release_id, patch_id, platform, sha256, size, upload_key, download_key, uploaded
+         FROM artifacts_bundles ORDER BY id", &[]).map_err(internal)?
+        .iter().map(|row| { Ok(AssetBundle {
+                id: row.try_get(0).map_err(internal)?,
+                app_id: row.try_get(1).map_err(internal)?,
+                release_id: row.try_get(2).map_err(internal)?,
+                patch_id: row.try_get(3).map_err(internal)?,
+                platform: row.try_get(4).map_err(internal)?,
+                sha256: row.try_get(5).map_err(internal)?,
+                size: row.try_get::<_, i64>(6).map_err(internal)? as u64,
+                upload_key: row.try_get(7).map_err(internal)?,
+                download_key: row.try_get(8).map_err(internal)?,
+                uploaded: row.try_get(9).map_err(internal)?,
+            }) }).collect()
 }
 
 pub(in crate::modules::artifacts) fn save(
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     entity: &AssetBundle,
 ) -> Result<()> {
     connection
@@ -101,7 +51,7 @@ pub(in crate::modules::artifacts) fn save(
                 upload_key,
                 download_key,
                 uploaded
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT(id) DO UPDATE SET
                 app_id = excluded.app_id,
                 release_id = excluded.release_id,

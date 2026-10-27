@@ -1,6 +1,6 @@
 use super::*;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn every_management_subtree_keeps_authentication_after_nesting() {
     let (_directory, service) = service();
     let routes = [
@@ -48,7 +48,7 @@ async fn every_management_subtree_keeps_authentication_after_nesting() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn console_deep_links_do_not_turn_unknown_api_paths_into_html() {
     let (directory, mut service) = service();
     service.console_dir = directory.path().join("console");
@@ -90,7 +90,7 @@ async fn console_deep_links_do_not_turn_unknown_api_paths_into_html() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn management_request_bodies_are_bounded() {
     let (_directory, service) = service();
     let response = router(service)
@@ -110,7 +110,7 @@ async fn management_request_bodies_are_bounded() {
     assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn concurrent_uploads_publish_one_immutable_object() {
     let (_directory, service) = service();
     fixture(&service);
@@ -127,7 +127,7 @@ async fn concurrent_uploads_publish_one_immutable_object() {
             .count(),
         1
     );
-    let bytes = std::fs::read(service.objects.binary(artifact.id)).unwrap();
+    let bytes = std::fs::read(binary_path(&service, artifact.id).await).unwrap();
     assert_eq!(
         bytes,
         if first == StatusCode::OK {
@@ -143,23 +143,32 @@ async fn concurrent_uploads_publish_one_immutable_object() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pending_upload_recovers_an_object_left_before_commit() {
     let (_directory, service) = service();
     fixture(&service);
     let artifact = artifact(&service, None, &hex::encode(Sha256::digest(b"abc")), 3);
-    std::fs::write(service.objects.binary(artifact.id), b"orphan").unwrap();
+    let location = service.objects.destination(
+        crate::platform::objects::Kind::Binary,
+        &artifact.app_id,
+        artifact.release_id,
+        artifact.patch_id,
+        artifact.id,
+    );
+    let orphan = service.objects.local_path(&location);
+    std::fs::create_dir_all(orphan.parent().unwrap()).unwrap();
+    std::fs::write(orphan, b"orphan").unwrap();
     assert_eq!(
         upload_bytes(&service, &artifact, b"abc").await,
         StatusCode::OK
     );
     assert_eq!(
-        std::fs::read(service.objects.binary(artifact.id)).unwrap(),
+        std::fs::read(binary_path(&service, artifact.id).await).unwrap(),
         b"abc"
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn database_commit_failure_removes_the_published_file() {
     let (_directory, service) = service();
     fixture(&service);
@@ -168,15 +177,14 @@ async fn database_commit_failure_removes_the_published_file() {
         .database
         .transaction(|connection| {
             connection
-                .execute_batch(
+                .batch_execute(
                     "CREATE TABLE publication_failure (
                 app_id TEXT REFERENCES applications_apps(id) DEFERRABLE INITIALLY DEFERRED
             );
+            CREATE FUNCTION fail_publication() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+            BEGIN INSERT INTO publication_failure VALUES('missing'); RETURN NEW; END $$;
             CREATE TRIGGER fail_upload_commit AFTER UPDATE OF uploaded ON artifacts_binaries
-            WHEN NEW.uploaded = 1
-            BEGIN
-                INSERT INTO publication_failure VALUES('missing');
-            END;",
+            FOR EACH ROW WHEN (NEW.uploaded) EXECUTE FUNCTION fail_publication();",
                 )
                 .map_err(internal)
         })
@@ -185,12 +193,19 @@ async fn database_commit_failure_removes_the_published_file() {
         upload_bytes(&service, &artifact, b"abc").await,
         StatusCode::INTERNAL_SERVER_ERROR
     );
-    assert!(!service.objects.binary(artifact.id).exists());
+    let location = service.objects.destination(
+        crate::platform::objects::Kind::Binary,
+        &artifact.app_id,
+        artifact.release_id,
+        artifact.patch_id,
+        artifact.id,
+    );
+    assert!(!service.objects.local_path(&location).exists());
     service
         .database
         .transaction(|connection| {
             connection
-                .execute_batch("DROP TRIGGER fail_upload_commit;")
+                .batch_execute("DROP TRIGGER fail_upload_commit ON artifacts_binaries;")
                 .map_err(internal)
         })
         .unwrap();

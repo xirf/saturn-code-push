@@ -3,7 +3,8 @@ import { request } from '~/lib/api/client'
 import { usePreferencesStore } from '~/stores/preferences'
 import { useSessionScope } from '../stores/session-scope'
 import { SESSION_KEY, useSessionQuery } from '../queries/session'
-import { sessionSchema, type LoginInput } from '../types/session'
+import { SETUP_KEY } from '../queries/setup'
+import { sessionSchema, type LoginInput, type SetupInput } from '../types/session'
 
 export function useIdentity() {
   const session = useSessionQuery()
@@ -79,5 +80,20 @@ export function useIdentity() {
     onSuccess: expire,
   })
 
-  return { session, login, logout, expire }
+  async function completeSetup(input: SetupInput) {
+    try {
+      const user = sessionSchema.parse(
+        await request('/auth/setup', { method: 'POST', body: input }),
+      )
+      cache.cancelQueries({ key: SESSION_KEY })
+      clearPrivateData()
+      cache.setQueryData(SESSION_KEY, user)
+      cache.setQueryData(SETUP_KEY, { required: false, enabled: false })
+      await navigateTo('/')
+    } finally {
+      input.password = ''
+      input.setup_token = ''
+    }
+  }
+  return { session, login, logout, expire, completeSetup }
 }

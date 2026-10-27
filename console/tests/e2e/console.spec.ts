@@ -12,11 +12,21 @@ if (!token || !password) {
 }
 
 async function signIn(page: Page) {
+  test.setTimeout(90_000)
   await page.goto('/login')
   await page.screenshot({ path: 'test-results/login-desktop.png', fullPage: true })
   await page.getByLabel('Username', { exact: true }).fill('admin')
   await page.getByLabel('Password', { exact: true }).fill(password!)
+  const responsePromise = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/auth/login',
+  )
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  const response = await responsePromise
+  if (response.status() === 429) {
+    await page.waitForTimeout(Math.min(60, Number(response.headers()['retry-after']) || 60) * 1000)
+    await page.getByLabel('Password', { exact: true }).fill(password!)
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  }
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
 }
 
@@ -108,6 +118,7 @@ test('sign-in, application creation, direct links, and static asset security', a
   await page.getByLabel('Password', { exact: true }).fill(password!)
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
+  await page.goto('/applications')
   await page.getByRole('button', { name: 'New application', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('Application name').fill('Created in browser')

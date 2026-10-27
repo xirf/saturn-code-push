@@ -1,5 +1,26 @@
 export const documentationSources = [
   {
+    slug: 'artifact-storage',
+    title: 'Artifact storage',
+    description: 'Organized local files and private S3 compatible buckets.',
+    section: 'Get started',
+    source: 'docs/artifact-storage.md',
+  },
+  {
+    slug: 'accounts-and-postgresql',
+    title: 'Accounts and PostgreSQL',
+    description: 'Roles, scoped API keys, audit history, and SQLite migration.',
+    section: 'Get started',
+    source: 'docs/accounts-and-postgresql.md',
+  },
+  {
+    slug: 'github-deployments',
+    title: 'GitHub CI/CD',
+    description: 'Link deployments, report GitHub Actions builds, and compare changes.',
+    section: 'Get started',
+    source: 'docs/github-deployments.md',
+  },
+  {
     slug: 'introduction',
     title: 'Introduction',
     description: 'What Saturn provides and how to get started.',

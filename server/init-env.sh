@@ -10,19 +10,21 @@ if [ -e "$env_file" ]; then
 fi
 
 umask 077
-token=$(openssl rand -hex 32)
+setup_token=$(openssl rand -hex 32)
+postgres_password=$(openssl rand -hex 32)
 
 # Noclobber also prevents a concurrent setup process from replacing this file.
 (
     set -C
     {
-        printf 'ADMIN_TOKEN=sb_api_%s\n' "$token"
+        printf 'SETUP_TOKEN=%s\n' "$setup_token"
+        printf 'POSTGRES_PASSWORD=%s\n' "$postgres_password"
+        printf 'DATABASE_URL=postgresql://saturn:%s@postgres:5432/saturn\n' "$postgres_password"
         printf '%s\n' \
             'PUBLIC_BASE_URL=http://localhost:3000' \
             'HOST_PORT=3000' \
-            'RUST_LOG=info' \
-            'ADMIN_USERNAME=admin'
+            'RUST_LOG=info'
     } > "$env_file"
 )
 
-printf '%s\n' 'Created server/.env with a random API token and owner-only permissions.'
+printf '%s\n' 'Created server/.env with random PostgreSQL/setup credentials and owner-only permissions.'
