@@ -1,0 +1,9 @@
+{
+  "app_id": "app",
+  "channel": "stable",
+  "release_version": "1.0.0+1",
+  "platform": "android",
+  "arch": "x86_64",
+  "client_id": "11111111-2222-4333-8444-555555555555",
+  "current_patch_number": null
+}

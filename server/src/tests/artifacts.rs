@@ -154,6 +154,7 @@ async fn asset_bundle_is_scoped_to_running_patch_and_rolls_back() {
             release_id: 2,
             number: 1,
             channel_ids: vec![],
+            rollout_percentages: HashMap::new(),
             is_rolled_back: false,
             created_at: now(),
         });

@@ -77,6 +77,7 @@ pub(super) fn query() -> Check {
         arch: "x86_64".into(),
         current_patch_number: None,
         patch_number: None,
+        client_id: None,
     }
 }
 
@@ -112,6 +113,7 @@ pub(super) fn patch(s: &Service, number: i64) -> i64 {
             release_id: 2,
             number,
             channel_ids: vec![1],
+            rollout_percentages: HashMap::new(),
             is_rolled_back: false,
             created_at: now(),
         });

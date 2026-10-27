@@ -1,5 +1,12 @@
 export const documentationSources = [
   {
+    slug: 'client-rollouts',
+    title: 'Client rollouts',
+    description: 'Native installation identity, Flutter reference app, and rollout validation.',
+    section: 'Get started',
+    source: 'docs/client-rollouts.md',
+  },
+  {
     slug: 'artifact-storage',
     title: 'Artifact storage',
     description: 'Organized local files and private S3 compatible buckets.',

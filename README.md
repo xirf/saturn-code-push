@@ -35,6 +35,7 @@ For Docker, use `docker compose` in place of `podman compose`. No host Rust or N
 The same guides are published in the console's **Documentation** section and are available without signing in. Repository Markdown is the source; the web build generates searchable pages with navigation, heading links, and code-copy buttons.
 
 - [Using Saturn with Shorebird](docs/usage.md)
+- [Flutter code updates and rollout identity](docs/client-rollouts.md)
 - [Publish and inspect asset updates](docs/asset-support.md)
 - [Flutter package integration](packages/saturn_assets/README.md)
 - [Accounts, API keys, and PostgreSQL migration](docs/accounts-and-postgresql.md)

@@ -60,7 +60,7 @@ Build the image from the repository root using `server/Dockerfile`; it includes 
 
 Back up PostgreSQL and object files together while application writes are stopped. Keep the exact release baselines: patch reconstruction depends on them. Signing private keys live separately and must also be backed up.
 
-Saturn implements a subset of the Shorebird protocol. OAuth, billing, managed signing, percentage rollouts, background artifact analysis, and iOS validation remain unimplemented. PostgreSQL repositories use parameterized SQL, a bounded pool, and transaction locks on Tokio's blocking workers. Use cases still serialize to preserve publishing invariants, and some queries filter entity lists in memory. Expiring storage URLs, monitoring, operational restore testing, and load testing remain deployment responsibilities. Building patches relies on Shorebird-distributed compiler/engine artifacts.
+Saturn implements a subset of the Shorebird protocol. OAuth, billing, managed signing, background artifact analysis, and iOS validation remain unimplemented. PostgreSQL repositories use parameterized SQL, a bounded pool, and transaction locks on Tokio's blocking workers. Use cases still serialize to preserve publishing invariants, and some queries filter entity lists in memory. Expiring storage URLs, monitoring, operational restore testing, and load testing remain deployment responsibilities. Building patches relies on Shorebird-distributed compiler/engine artifacts.
 
 ## Frontend development
 

@@ -1,0 +1,14 @@
+name: saturn_rollout_example
+description: Reference Saturn integration using Shorebird's native installation identity.
+publish_to: none
+version: 1.0.0+1
+environment:
+  sdk: ^3.9.0
+dependencies:
+  flutter:
+    sdk: flutter
+  shorebird_code_push: ^2.0.7
+flutter:
+  uses-material-design: true
+  assets:
+    - shorebird.yaml

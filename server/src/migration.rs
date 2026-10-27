@@ -9,6 +9,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/002_accounts.sql"),
     include_str!("../migrations/003_github_sync.sql"),
     include_str!("../migrations/004_object_storage.sql"),
+    include_str!("../migrations/005_rollouts.sql"),
 ];
 
 pub(crate) fn run(c: &mut Connection<'_>) -> Result<()> {

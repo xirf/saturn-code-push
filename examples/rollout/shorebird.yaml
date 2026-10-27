@@ -1,0 +1,5 @@
+# Replace these before building the baseline release.
+app_id: YOUR_SATURN_APP_ID
+base_url: https://updates.example.com
+# This example owns check/download timing through the Dart API.
+auto_update: false

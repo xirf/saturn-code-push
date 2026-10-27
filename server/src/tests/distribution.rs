@@ -127,3 +127,93 @@ async fn declared_assets_block_promotion_until_uploaded() {
         StatusCode::BAD_REQUEST
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rollout_selection_is_stable_scoped_and_preserves_rollback() {
+    let (_dir, s) = service();
+    fixture(&s);
+    let baseline = artifact(&s, None, &"a".repeat(64), 3);
+    upload_bytes(&s, &baseline, b"abc").await;
+    let mut ids = Vec::new();
+    for n in [1, 2] {
+        let id = patch(&s, n);
+        let a = artifact(&s, Some(id), &"a".repeat(64), 3);
+        upload_bytes(&s, &a, b"abc").await;
+        ids.push(id);
+    }
+    let path = "/api/v1/apps/app/patches/promote";
+    for invalid in [json!(-1), json!(101), json!(1.5), json!("5"), Value::Null] {
+        assert_eq!(
+            call(
+                &s,
+                "POST",
+                path,
+                json!({"patch_id":ids[1],"channel_id":1,"rollout_percentage":invalid}),
+                true
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let update =
+        |percentage| json!({"patch_id":ids[1],"channel_id":1,"rollout_percentage":percentage});
+    assert_eq!(
+        call(&s, "POST", path, update(25), true).await.0,
+        StatusCode::OK
+    );
+    assert_eq!(select_patch(&s, &query()).unwrap()["patch"]["number"], 1);
+    let native: Value =
+        serde_json::from_str(include_str!("fixtures/shorebird_patch_check.json")).unwrap();
+    let (status, first) = call(&s, "POST", "/api/v1/patches/check", native.clone(), false).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, repeated) = call(&s, "POST", "/api/v1/patches/check", native, false).await;
+    assert_eq!(first, repeated);
+    let mut cohort = Vec::new();
+    for n in 0..100 {
+        let mut q = query();
+        q.client_id = Some(format!("install-{n}"));
+        let result = select_patch(&s, &q).unwrap();
+        assert_eq!(result, select_patch(&s, &q).unwrap());
+        cohort.push(result["patch"]["number"] == 2);
+    }
+    assert!(cohort.iter().any(|v| *v) && cohort.iter().any(|v| !*v));
+    assert_eq!(
+        call(&s, "POST", path, update(75), true).await.0,
+        StatusCode::OK
+    );
+    for (n, included) in cohort.iter().enumerate() {
+        let mut q = query();
+        q.client_id = Some(format!("install-{n}"));
+        if *included {
+            assert_eq!(select_patch(&s, &q).unwrap()["patch"]["number"], 2);
+        }
+    }
+    // Older callers promoting again must preserve the existing percentage.
+    call(
+        &s,
+        "POST",
+        path,
+        json!({"patch_id":ids[1],"channel_id":1}),
+        true,
+    )
+    .await;
+    let (_, state) = call(&s, "GET", "/admin/state", json!({}), true).await;
+    assert_eq!(state["patches"][1]["rollout_percentages"]["1"], 75);
+    assert_eq!(
+        call(&s, "POST", path, update(0), true).await.0,
+        StatusCode::OK
+    );
+    let mut q = query();
+    q.client_id = Some("install-1".into());
+    assert_eq!(select_patch(&s, &q).unwrap()["patch"]["number"], 1);
+    q.current_patch_number = Some(2);
+    assert_eq!(select_patch(&s, &q).unwrap()["patch_available"], false);
+    set_rollback(&s, "app".into(), 2, ids[1], true).unwrap();
+    let result = select_patch(&s, &q).unwrap();
+    assert_eq!(result["patch"]["number"], 1);
+    assert_eq!(result["rolled_back_patch_numbers"], json!([2]));
+    set_rollback(&s, "app".into(), 2, ids[1], false).unwrap();
+    call(&s, "POST", path, update(100), true).await;
+    assert_eq!(select_patch(&s, &query()).unwrap()["patch"]["number"], 2);
+}

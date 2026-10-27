@@ -9,6 +9,7 @@ interface PatchActionInput {
   patch: Patch
   action: PatchAction
   channelId?: number
+  rolloutPercentage?: number
   generation: number
 }
 
@@ -24,7 +25,11 @@ export function usePatchAction() {
         if (!input.channelId) throw new Error('Select a delivery channel')
         await request(`${appPath}/patches/promote`, {
           method: 'POST',
-          body: { patch_id: input.patch.id, channel_id: input.channelId },
+          body: {
+            patch_id: input.patch.id,
+            channel_id: input.channelId,
+            rollout_percentage: input.rolloutPercentage,
+          },
         })
       } else {
         const operation = input.action === 'rollback' ? 'rollback' : 'rollforward'

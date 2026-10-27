@@ -11,6 +11,10 @@ const props = defineProps<{ patch: Patch; action: PatchAction }>()
 const open = defineModel<boolean>('open', { default: false })
 const channelId = ref('')
 const error = ref('')
+const rolloutPercentage = ref(100)
+watch([channelId, open], () => {
+  rolloutPercentage.value = props.patch.rollout_percentages[channelId.value] ?? 100
+})
 const workspace = useWorkspace()
 const scope = useSessionScope()
 const { mutateAsync, asyncStatus } = usePatchAction()
@@ -53,6 +57,7 @@ async function submit() {
       patch: props.patch,
       action: props.action,
       channelId: Number(channelId.value),
+      rolloutPercentage: rolloutPercentage.value,
       generation: scope.generation,
     })
     open.value = false
@@ -118,6 +123,21 @@ async function submit() {
               </SelectItem>
             </SelectContent>
           </Select>
+          <Label for="patch-rollout">Rollout percentage</Label>
+          <Input
+            id="patch-rollout"
+            v-model.number="rolloutPercentage"
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+            required
+            :disabled="busy"
+          />
+          <p class="text-sm text-muted-foreground">
+            0% pauses new delivery. Partial rollouts require a persistent device client ID. Increase
+            to 100% for all devices.
+          </p>
         </div>
         <ErrorNotice
           v-if="error"
