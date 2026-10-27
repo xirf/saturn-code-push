@@ -14,7 +14,8 @@ pub(in crate::modules::distribution) fn list(
                 number,
                 channel_ids,
                 is_rolled_back,
-                created_at
+                created_at,
+                rollout_percentages
          FROM distribution_patches ORDER BY id",
             &[],
         )
@@ -29,6 +30,10 @@ pub(in crate::modules::distribution) fn list(
                     .map_err(internal)?,
                 is_rolled_back: row.try_get(4).map_err(internal)?,
                 created_at: row.try_get(5).map_err(internal)?,
+                rollout_percentages: serde_json::from_str(
+                    &row.try_get::<_, String>(6).map_err(internal)?,
+                )
+                .map_err(internal)?,
             })
         })
         .collect()
@@ -46,14 +51,16 @@ pub(in crate::modules::distribution) fn save(
                 number,
                 channel_ids,
                 is_rolled_back,
-                created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6)
+                created_at,
+                rollout_percentages
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT(id) DO UPDATE SET
                 release_id = excluded.release_id,
                 number = excluded.number,
                 channel_ids = excluded.channel_ids,
                 is_rolled_back = excluded.is_rolled_back,
-                created_at = excluded.created_at",
+                created_at = excluded.created_at,
+                rollout_percentages = excluded.rollout_percentages",
             params![
                 entity.id,
                 entity.release_id,
@@ -61,6 +68,7 @@ pub(in crate::modules::distribution) fn save(
                 serde_json::to_string(&entity.channel_ids).map_err(internal)?,
                 entity.is_rolled_back,
                 entity.created_at,
+                serde_json::to_string(&entity.rollout_percentages).map_err(internal)?,
             ],
         )
         .map_err(internal)?;

@@ -144,6 +144,7 @@ pub(super) fn create_patch(
             .checked_add(1)
             .ok_or_else(|| conflict("Patch number limit reached"))?,
         channel_ids: Vec::new(),
+        rollout_percentages: HashMap::new(),
         is_rolled_back: false,
         created_at: now(),
     };
@@ -237,6 +238,15 @@ pub(super) fn promote(
             return Err(bad("Release platform is not active"));
         }
     }
+    if let Some(value) = input.get("rollout_percentage") {
+        let percentage = value
+            .as_u64()
+            .filter(|p| *p <= 100)
+            .ok_or_else(|| bad("rollout_percentage must be an integer from 0 to 100"))?;
+        patch
+            .rollout_percentages
+            .insert(channel_id.to_string(), percentage as u8);
+    }
     if !patch.channel_ids.contains(&channel_id) {
         patch.channel_ids.push(channel_id);
     }
@@ -329,6 +339,7 @@ pub(super) fn select_patch(
                 && ready.contains(&patch.id)
                 && !patch.is_rolled_back
                 && patch.channel_ids.contains(&channel.id)
+                && rollout_eligible(patch, channel.id, input.client_id.as_deref())
         })
         .filter_map(|patch| {
             binaries
@@ -386,4 +397,71 @@ fn assets_ready(connection: &mut Connection<'_>, patch_id: i64) -> Result<bool> 
         .iter()
         .filter(|b| b.patch_id == patch_id)
         .all(|b| b.uploaded))
+}
+
+/// Hash a length-delimited identity so cohorts remain stable as the percentage grows.
+fn rollout_eligible(patch: &Patch, channel: i64, client: Option<&str>) -> bool {
+    use sha2::{Digest, Sha256};
+    let percentage = patch
+        .rollout_percentages
+        .get(&channel.to_string())
+        .copied()
+        .unwrap_or(100);
+    if percentage == 100 {
+        return true;
+    }
+    if percentage == 0 {
+        return false;
+    }
+    let Some(client) = client.filter(|id| !id.trim().is_empty() && id.len() <= 256) else {
+        return false;
+    };
+    let mut hash = Sha256::new();
+    hash.update(b"saturn-rollout-v1");
+    hash.update(patch.id.to_be_bytes());
+    hash.update(channel.to_be_bytes());
+    hash.update((client.len() as u64).to_be_bytes());
+    hash.update(client.as_bytes());
+    let bytes = hash.finalize();
+    let bucket = u64::from_be_bytes(bytes[..8].try_into().expect("eight hash bytes")) % 10_000;
+    bucket < u64::from(percentage) * 100
+}
+
+#[cfg(test)]
+mod rollout_tests {
+    use super::*;
+
+    #[test]
+    fn cohorts_are_nested_and_isolated_by_channel() {
+        let mut patch = Patch {
+            id: 42,
+            release_id: 1,
+            number: 1,
+            channel_ids: vec![1, 2],
+            rollout_percentages: HashMap::new(),
+            is_rolled_back: false,
+            created_at: String::new(),
+        };
+        assert!(rollout_eligible(&patch, 1, None));
+        patch.rollout_percentages.insert("1".into(), 25);
+        assert!(!rollout_eligible(&patch, 1, None));
+        assert!(!rollout_eligible(&patch, 1, Some(" ")));
+        assert!(!rollout_eligible(&patch, 1, Some(&"a".repeat(257))));
+        assert!(rollout_eligible(&patch, 2, None));
+        let cohort: Vec<_> = (0..1000)
+            .map(|n| rollout_eligible(&patch, 1, Some(&format!("device-{n}"))))
+            .collect();
+        let count = cohort.iter().filter(|v| **v).count();
+        assert!((180..320).contains(&count));
+        patch.rollout_percentages.insert("1".into(), 75);
+        for (n, included) in cohort.iter().enumerate() {
+            if *included {
+                assert!(rollout_eligible(&patch, 1, Some(&format!("device-{n}"))));
+            }
+        }
+        patch.rollout_percentages.insert("1".into(), 0);
+        assert!(!rollout_eligible(&patch, 1, Some("device-1")));
+        patch.rollout_percentages.insert("1".into(), 100);
+        assert!(rollout_eligible(&patch, 1, None));
+    }
 }

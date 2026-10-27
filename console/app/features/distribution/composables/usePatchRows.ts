@@ -10,7 +10,12 @@ export function usePatchRows(patches: Ref<Patch[]>) {
     patches.value.map((patch) => {
       const release = workspace.releases.value.find((release) => release.id === patch.release_id)
       const channels = patch.channel_ids.map((id) => {
-        return workspace.channels.value.find((channel) => channel.id === id)?.name ?? 'Unknown'
+        const name =
+          workspace.channels.value.find((channel) => channel.id === id)?.name ?? 'Unknown'
+        const percentage = patch.rollout_percentages[String(id)] ?? 100
+        return percentage === 100
+          ? name
+          : `${name} · ${percentage === 0 ? 'Paused' : `${percentage}%`}`
       })
       const artifacts = workspace.artifacts.value
         .filter((artifact) => artifact.patch_id === patch.id)

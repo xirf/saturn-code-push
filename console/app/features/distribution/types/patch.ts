@@ -5,6 +5,7 @@ export const patchSchema = z.object({
   release_id: z.number(),
   number: z.number(),
   channel_ids: z.array(z.number()),
+  rollout_percentages: z.record(z.string(), z.number()).default({}),
   is_rolled_back: z.boolean(),
   created_at: z.string(),
 })

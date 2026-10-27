@@ -17,7 +17,7 @@ For asset changes, Saturn adds a separate ZIP publisher and the `saturn_assets` 
 | Images, text, and fonts | Packaged in the store release                              | Supported overlays require `saturn_assets` in the store release; fonts also need runtime registration |
 | Patch promotion         | Hosted tracks                                              | Saturn channels, managed from the dashboard                                                           |
 | Rollback scope          | Track-specific behavior is documented upstream             | Saturn marks a patch rolled back across all of its assigned channels                                  |
-| Hosted features         | The upstream product's feature set                         | Single administrator; no hosted billing, OAuth, managed signing, or percentage rollout feature        |
+| Hosted features         | The upstream product's feature set                         | Multiple accounts and roles; no hosted billing, OAuth, or managed signing        |
 
 The upstream [patch guide](https://docs.shorebird.dev/code-push/patch/) explains the normal Dart-patch flow and its asset restrictions. `--allow-asset-diffs` bypasses a check; it does not publish asset bytes. Saturn's extra upload is still required.
 
@@ -135,3 +135,41 @@ For asset bundles, the next successful asset check stops selecting the rolled-ba
 - [Integrate the Flutter overlay package](../packages/saturn_assets/README.md)
 - [Server setup, credentials, and deployment](../server/README.md)
 - [Security and current limitations](../SECURITY.md)
+
+
+## Gradual patch rollouts
+
+In **Patches**, choose **Promote**, select a channel, and set its rollout percentage.
+Start at 5%, monitor launch failures, then promote the same patch to 25%, 50%, and
+100%. Each channel has its own setting. Existing patches default to 100%.
+The channel badges show partial percentages and paused delivery.
+
+0% pauses new delivery; it does not uninstall downloaded or running patches.
+Reducing a percentage also does not uninstall patches. Use **Roll back** to remove
+a faulty patch on subsequent updater checks and restarts. Restore preserves rollout settings.
+These controls are manual; there is no automatic failure threshold or scheduled expansion.
+
+Partial rollouts require the updater's patch-check request to include a nonempty,
+persistent `client_id` (at most 256 bytes). Shorebird's upstream native updater already generates, persists, and sends this field.
+See [Flutter code updates and rollout identity](client-rollouts.md) for the verified
+source revision, reference application, smoke tool, and device validation steps.
+Saturn does not modify the upstream engine or inject an installation ID. Clients without a valid ID remain on the previous
+eligible patch until rollout reaches 100%. Do not use an IP address or a random
+per-request value as the identity.
+
+Saturn hashes the patch, channel, and client ID into a stable bucket. Increasing the
+percentage preserves existing cohort membership. This is an approximate percentage
+of identifiers, not a fixed device quota or an A/B experiment. An excluded device can
+receive an older eligible patch; explicit rollback instructions remain independent
+of cohort selection. Assets remain bound to the running patch identity.
+
+CI can use the existing authenticated promotion endpoint:
+
+```json
+{"patch_id": 123, "channel_id": 1, "rollout_percentage": 5}
+```
+
+`rollout_percentage` must be an integer from 0 through 100. Omitting it preserves
+that channel's current setting, defaulting to 100% for a new promotion. These settings
+use the existing publisher permissions and audit trail. Device IDs are client claims,
+so cohorts are a delivery mechanism, not an authorization boundary.
