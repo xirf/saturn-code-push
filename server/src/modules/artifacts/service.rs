@@ -11,13 +11,13 @@ use crate::{
         values::{text, uid},
     },
 };
-use rusqlite::Connection;
+use postgres::Transaction as Connection;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
 pub(super) fn list_artifacts(
     runtime: &Runtime,
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     app_id: String,
     release_id: i64,
     filters: HashMap<String, String>,
@@ -44,7 +44,7 @@ pub(super) fn list_artifacts(
 
 pub(super) fn register(
     runtime: &Runtime,
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     app: String,
     release: i64,
     patch: Option<i64>,
@@ -109,7 +109,7 @@ pub(super) fn register(
 
 pub(super) fn register_release_artifact(
     runtime: &Runtime,
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     app: String,
     id: i64,
     metadata: HashMap<String, String>,
@@ -119,7 +119,7 @@ pub(super) fn register_release_artifact(
 
 pub(super) fn register_patch_artifact(
     runtime: &Runtime,
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     app: String,
     id: i64,
     metadata: HashMap<String, String>,
@@ -128,14 +128,14 @@ pub(super) fn register_patch_artifact(
     register(runtime, connection, app, release, Some(id), metadata)
 }
 
-pub(super) fn pending_binary(connection: &Connection, key: &str) -> Result<Artifact> {
+pub(super) fn pending_binary(connection: &mut Connection<'_>, key: &str) -> Result<Artifact> {
     artifact_repository::list(connection)?
         .into_iter()
         .find(|entity| entity.upload_key == key && !entity.uploaded)
         .ok_or_else(missing)
 }
 
-pub(super) fn complete_binary(connection: &Connection, id: i64) -> Result<()> {
+pub(super) fn complete_binary(connection: &mut Connection<'_>, id: i64) -> Result<()> {
     let mut entity = artifact_repository::list(connection)?
         .into_iter()
         .find(|entity| entity.id == id && !entity.uploaded)
@@ -144,7 +144,7 @@ pub(super) fn complete_binary(connection: &Connection, id: i64) -> Result<()> {
     artifact_repository::save(connection, &entity)
 }
 
-pub(super) fn download_binary(connection: &Connection, key: &str) -> Result<i64> {
+pub(super) fn download_binary(connection: &mut Connection<'_>, key: &str) -> Result<i64> {
     artifact_repository::list(connection)?
         .into_iter()
         .find(|entity| entity.download_key == key && entity.uploaded)
@@ -154,7 +154,7 @@ pub(super) fn download_binary(connection: &Connection, key: &str) -> Result<i64>
 
 pub(super) fn register_bundle(
     runtime: &Runtime,
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     app: String,
     patch_id: i64,
     input: super::dto::RegisterBundle,
@@ -169,6 +169,11 @@ pub(super) fn register_bundle(
         return Err(bad("Unsupported asset bundle platform"));
     }
     let patch = distribution::api::patch(connection, &app, patch_id)?;
+    if !patch.channel_ids.is_empty() {
+        return Err(conflict(
+            "Cannot add asset bundles after patch promotion; create a new patch and declare required_asset_platforms",
+        ));
+    }
     let release = distribution::api::release(connection, &app, patch.release_id)?;
     if !release.platforms.contains_key(&input.platform) {
         return Err(bad("Release does not include this platform"));
@@ -182,6 +187,16 @@ pub(super) fn register_bundle(
             "Asset bundle already registered for this patch and platform",
         ));
     }
+    if let Some(signature) = &input.signature {
+        use base64::Engine;
+        if base64::engine::general_purpose::STANDARD
+            .decode(signature)
+            .map_or(true, |bytes| bytes.len() != 64)
+        {
+            return Err(bad("Asset signature must be a base64 Ed25519 signature"));
+        }
+    }
+    let signature = input.signature;
     let bundle = AssetBundle {
         id: next_id(connection)?,
         app_id: app,
@@ -199,17 +214,25 @@ pub(super) fn register_bundle(
         "upload_url": format!("{}/asset-uploads/{}", runtime.base_url, bundle.upload_key),
     });
     asset_bundle_repository::save(connection, &bundle)?;
+    if let Some(signature) = signature {
+        connection
+            .execute(
+                "INSERT INTO artifact_asset_signatures(bundle_id, signature) VALUES ($1, $2)",
+                crate::sql_params![bundle.id, signature],
+            )
+            .map_err(crate::platform::error::internal)?;
+    }
     Ok(response)
 }
 
-pub(super) fn pending_bundle(connection: &Connection, key: &str) -> Result<AssetBundle> {
+pub(super) fn pending_bundle(connection: &mut Connection<'_>, key: &str) -> Result<AssetBundle> {
     asset_bundle_repository::list(connection)?
         .into_iter()
         .find(|entity| entity.upload_key == key && !entity.uploaded)
         .ok_or_else(missing)
 }
 
-pub(super) fn complete_bundle(connection: &Connection, id: i64) -> Result<()> {
+pub(super) fn complete_bundle(connection: &mut Connection<'_>, id: i64) -> Result<()> {
     let mut entity = asset_bundle_repository::list(connection)?
         .into_iter()
         .find(|entity| entity.id == id && !entity.uploaded)
@@ -218,7 +241,7 @@ pub(super) fn complete_bundle(connection: &Connection, id: i64) -> Result<()> {
     asset_bundle_repository::save(connection, &entity)
 }
 
-pub(super) fn download_bundle(connection: &Connection, key: &str) -> Result<i64> {
+pub(super) fn download_bundle(connection: &mut Connection<'_>, key: &str) -> Result<i64> {
     asset_bundle_repository::list(connection)?
         .into_iter()
         .find(|entity| entity.download_key == key && entity.uploaded)
@@ -228,7 +251,7 @@ pub(super) fn download_bundle(connection: &Connection, key: &str) -> Result<i64>
 
 pub(super) fn check_bundle(
     runtime: &Runtime,
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     input: super::dto::AssetCheck,
 ) -> Result<Value> {
     let unavailable = json!({"asset_bundle_available": false});
@@ -272,7 +295,27 @@ pub(super) fn check_bundle(
     }) else {
         return Ok(unavailable);
     };
+
+    let signature: Option<String> = connection
+        .query_opt(
+            "SELECT signature FROM artifact_asset_signatures WHERE bundle_id = $1",
+            &[&bundle.id],
+        )
+        .map_err(crate::platform::error::internal)?
+        .map(|row| row.get(0));
+    let manifest = serde_json::to_string(&json!([
+        "saturn-assets-v1",
+        input.app_id,
+        input.release_version,
+        patch.number,
+        input.platform,
+        bundle.sha256,
+        bundle.size
+    ]))
+    .map_err(crate::platform::error::internal)?;
     Ok(json!({
+        "manifest": manifest,
+        "signature": signature,
         "asset_bundle_available": true,
         "patch_number": patch.number,
         "sha256": bundle.sha256,

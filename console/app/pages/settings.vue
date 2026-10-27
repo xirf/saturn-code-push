@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AccessManagement from '~/features/access/components/AccessManagement.vue'
 import { Copy, ShieldCheck, LogOut, Terminal } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import ErrorNotice from '~/components/shared/ErrorNotice.vue'
@@ -8,7 +9,7 @@ import { errorMessage } from '~/lib/api/client'
 definePageMeta({
   middleware: 'auth',
   title: 'Settings',
-  description: 'Server connection and administrator access.',
+  description: 'Accounts, API keys, and server access.',
 })
 const identity = useIdentity()
 const origin = ref('')
@@ -84,7 +85,7 @@ async function logout() {
       <Card>
         <CardHeader>
           <CardTitle>Access & session</CardTitle>
-          <CardDescription>Your administrator session.</CardDescription>
+          <CardDescription>Your account session.</CardDescription>
         </CardHeader>
         <CardContent class="space-y-5">
           <div class="flex justify-between text-sm">
@@ -97,14 +98,13 @@ async function logout() {
           </div>
           <div class="flex justify-between text-sm">
             <span class="text-muted-foreground">Role</span>
-            <Badge variant="secondary">Administrator</Badge>
+            <Badge variant="secondary">{{ identity.session.data.value?.role }}</Badge>
           </div>
           <Separator />
           <div class="flex items-start gap-3">
             <ShieldCheck class="mt-1 size-4 shrink-0 text-muted-foreground" />
             <p class="text-sm leading-relaxed text-muted-foreground">
-              Your administrator can reset credentials on the server. Password changes invalidate
-              existing sessions.
+              Manage your password below. Administrators can manage accounts and CI keys.
             </p>
           </div>
         </CardContent>
@@ -120,5 +120,6 @@ async function logout() {
         </CardFooter>
       </Card>
     </div>
+    <AccessManagement />
   </div>
 </template>

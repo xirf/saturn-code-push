@@ -1,5 +1,5 @@
 use super::dto::Check;
-use rusqlite::Connection;
+use postgres::Transaction as Connection;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
@@ -18,7 +18,7 @@ use crate::{
     },
 };
 
-pub(super) fn list_releases(connection: &Connection, app_id: String) -> Result<Value> {
+pub(super) fn list_releases(connection: &mut Connection<'_>, app_id: String) -> Result<Value> {
     applications::api::require(connection, &app_id)?;
     let releases: Vec<Release> = release_repository::list(connection)?
         .into_iter()
@@ -29,7 +29,7 @@ pub(super) fn list_releases(connection: &Connection, app_id: String) -> Result<V
 }
 
 pub(super) fn create_release(
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     app_id: String,
     input: Value,
 ) -> Result<Value> {
@@ -66,7 +66,7 @@ pub(super) fn create_release(
 }
 
 pub(super) fn update_release(
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     app_id: String,
     release_id: i64,
     input: Value,
@@ -109,7 +109,24 @@ pub(super) fn update_release(
     Ok(json!({}))
 }
 
-pub(super) fn create_patch(connection: &Connection, app_id: String, input: Value) -> Result<Value> {
+pub(super) fn create_patch(
+    connection: &mut Connection<'_>,
+    app_id: String,
+    input: Value,
+) -> Result<Value> {
+    let required_assets: Vec<String> = match input.get("required_asset_platforms") {
+        None => Vec::new(),
+        Some(value) => serde_json::from_value(value.clone())
+            .map_err(|_| bad("required_asset_platforms must be a string array"))?,
+    };
+    let mut unique = std::collections::HashSet::new();
+    for platform in &required_assets {
+        if !["android", "ios", "linux", "macos", "windows"].contains(&platform.as_str())
+            || !unique.insert(platform)
+        {
+            return Err(bad("Invalid or duplicate required asset platform"));
+        }
+    }
     let release_id = input["release_id"]
         .as_i64()
         .ok_or_else(|| bad("Invalid release_id"))?;
@@ -131,12 +148,13 @@ pub(super) fn create_patch(connection: &Connection, app_id: String, input: Value
         created_at: now(),
     };
     patch_repository::save(connection, &patch)?;
+    patch_repository::require_assets(connection, patch.id, &required_assets)?;
     Ok(json!(patch))
 }
 
 pub(super) fn list_patches(
     runtime: &Runtime,
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     app_id: String,
     release_id: i64,
 ) -> Result<Value> {
@@ -159,6 +177,9 @@ pub(super) fn list_patches(
             .and_then(|id| channels.iter().find(|channel| channel.id == *id))
             .map(|channel| &channel.name);
         let mut response = json!(patch);
+        response["required_asset_platforms"] =
+            json!(patch_repository::required_assets(connection, patch.id)?);
+        response["assets_ready"] = json!(assets_ready(connection, patch.id)?);
         response["artifacts"] = json!(artifacts);
         response["channel"] = json!(channel);
         responses.push(response);
@@ -166,7 +187,11 @@ pub(super) fn list_patches(
     Ok(json!({"patches": responses}))
 }
 
-pub(super) fn promote(connection: &Connection, app_id: String, input: Value) -> Result<Value> {
+pub(super) fn promote(
+    connection: &mut Connection<'_>,
+    app_id: String,
+    input: Value,
+) -> Result<Value> {
     let patch_id = input["patch_id"]
         .as_i64()
         .ok_or_else(|| bad("Invalid patch_id"))?;
@@ -190,6 +215,11 @@ pub(super) fn promote(connection: &Connection, app_id: String, input: Value) -> 
         .collect();
     if patch_binaries.is_empty() || patch_binaries.iter().any(|artifact| !artifact.uploaded) {
         return Err(bad("All registered patch artifacts must be uploaded"));
+    }
+    if !assets_ready(connection, patch.id)? {
+        return Err(bad(
+            "All required and registered asset bundles must be uploaded before promotion",
+        ));
     }
     let release = api::release(connection, &app_id, patch.release_id)?;
     for artifact in patch_binaries {
@@ -215,7 +245,7 @@ pub(super) fn promote(connection: &Connection, app_id: String, input: Value) -> 
 }
 
 pub(super) fn set_rollback(
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     app_id: String,
     release_id: i64,
     patch_id: i64,
@@ -231,7 +261,7 @@ pub(super) fn set_rollback(
 }
 
 pub(super) fn rollback(
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     app_id: String,
     release_id: i64,
     patch_id: i64,
@@ -240,7 +270,7 @@ pub(super) fn rollback(
 }
 
 pub(super) fn rollforward(
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     app_id: String,
     release_id: i64,
     patch_id: i64,
@@ -250,7 +280,7 @@ pub(super) fn rollforward(
 
 pub(super) fn select_patch(
     runtime: &Runtime,
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     input: &Check,
 ) -> Result<Value> {
     let mut response = json!({
@@ -286,10 +316,17 @@ pub(super) fn select_patch(
         .current_patch_number
         .or(input.patch_number)
         .unwrap_or(0);
+    let mut ready = std::collections::HashSet::new();
+    for patch in &patches {
+        if assets_ready(connection, patch.id)? {
+            ready.insert(patch.id);
+        }
+    }
     let selected = patches
         .iter()
         .filter(|patch| {
             patch.release_id == release.id
+                && ready.contains(&patch.id)
                 && !patch.is_rolled_back
                 && patch.channel_ids.contains(&channel.id)
         })
@@ -321,8 +358,32 @@ pub(super) fn select_patch(
 
 pub(super) fn check_patch(
     runtime: &Runtime,
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     input: Check,
 ) -> Result<Value> {
     select_patch(runtime, connection, &input)
+}
+
+fn assets_ready(connection: &mut Connection<'_>, patch_id: i64) -> Result<bool> {
+    let required = patch_repository::required_assets(connection, patch_id)?;
+    let bundles = artifacts::api::asset_bundles(connection)?;
+    for platform in &required {
+        let Some(bundle) = bundles
+            .iter()
+            .find(|b| b.patch_id == patch_id && b.platform == *platform && b.uploaded)
+        else {
+            return Ok(false);
+        };
+        if !artifacts::api::has_asset_signature(connection, bundle.id)? {
+            return Ok(false);
+        }
+    }
+    Ok(required.iter().all(|platform| {
+        bundles
+            .iter()
+            .any(|b| b.patch_id == patch_id && b.platform == *platform && b.uploaded)
+    }) && bundles
+        .iter()
+        .filter(|b| b.patch_id == patch_id)
+        .all(|b| b.uploaded))
 }

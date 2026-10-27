@@ -3,15 +3,18 @@ import { GitBranch, ShieldCheck, Activity, BookOpen } from '@lucide/vue'
 import SaturnMark from '~/components/brand/SaturnMark.vue'
 import SignInForm from '~/features/identity/components/SignInForm.vue'
 import LoginOrbit from '~/features/identity/components/LoginOrbit.vue'
+import { useSetupQuery } from '~/features/identity/queries/setup'
 import { useSessionQuery } from '~/features/identity/queries/session'
 
 definePageMeta({ layout: false })
 useHead({ title: 'Sign in - Saturn' })
 const session = useSessionQuery()
+const setup = useSetupQuery()
 watch(
-  session.data,
-  (user) => {
+  [session.data, setup.data],
+  ([user, status]) => {
     if (user) void navigateTo('/')
+    else if (status?.required) void navigateTo('/setup')
   },
   { immediate: true },
 )

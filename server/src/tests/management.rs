@@ -1,6 +1,6 @@
 use super::*;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn management_requires_token_and_device_api_does_not() {
     let (_dir, s) = service();
     assert_eq!(
@@ -36,7 +36,7 @@ async fn management_requires_token_and_device_api_does_not() {
     assert_eq!(response["patch_available"], false);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn app_and_release_lifecycle_is_persistent() {
     let (dir, s) = service();
     let (code, a) = call(
@@ -85,7 +85,7 @@ async fn app_and_release_lifecycle_is_persistent() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn failed_mutations_do_not_commit() {
     let (_dir, s) = service();
     let result: Result<()> = s.write(|d| {
@@ -96,7 +96,7 @@ async fn failed_mutations_do_not_commit() {
     assert_eq!(s.read(|d| Ok(d.sequence)).unwrap(), 0);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn dart_text_plain_json_is_accepted() {
     let (_dir, s) = service();
     let response = router(s)
@@ -114,7 +114,7 @@ async fn dart_text_plain_json_is_accepted() {
     assert_eq!(response.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn active_release_cannot_be_replaced() {
     let (_dir, s) = service();
     fixture(&s);

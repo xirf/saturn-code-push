@@ -1,10 +1,15 @@
 <script setup lang="ts">
+import { useIdentity } from '~/features/identity/composables/useIdentity'
 import { ArrowUpRight, MoreHorizontal, RotateCcw, Undo2 } from '@lucide/vue'
 import PatchActionDialog from './PatchActionDialog.vue'
 import type { Patch, PatchAction } from '../types/patch'
 
 defineProps<{ patch: Patch }>()
 
+const identity = useIdentity()
+const canPublish = computed(() =>
+  ['admin', 'publisher'].includes(identity.session.data.value?.role ?? ''),
+)
 const menuOpen = ref(false)
 const dialogOpen = ref(false)
 const action = ref<PatchAction>('promote')
@@ -18,7 +23,10 @@ async function chooseAction(value: PatchAction) {
 </script>
 
 <template>
-  <div class="flex justify-end gap-2">
+  <div
+    v-if="canPublish"
+    class="flex justify-end gap-2"
+  >
     <Button
       size="sm"
       variant="secondary"

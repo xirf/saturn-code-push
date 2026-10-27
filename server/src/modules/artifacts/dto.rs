@@ -31,6 +31,7 @@ pub(super) struct AssetPreview {
 
 #[derive(Deserialize)]
 pub(crate) struct RegisterBundle {
+    pub signature: Option<String>,
     pub sha256: String,
     pub size: u64,
     pub platform: String,

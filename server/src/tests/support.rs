@@ -147,9 +147,11 @@ pub(super) async fn upload_bytes(s: &Service, a: &Artifact, bytes: &[u8]) -> Sta
 pub(super) fn dashboard_service() -> (tempfile::TempDir, Service) {
     let (dir, mut s) = service();
     s.base_url = "https://saturn.test".into();
-    s.dashboard = Some(Arc::new(
-        auth::Credentials::new("admin".into(), auth::hash_password(PASSWORD).unwrap()).unwrap(),
-    ));
+    let credentials =
+        auth::Credentials::new("admin".into(), auth::hash_password(PASSWORD).unwrap()).unwrap();
+    s.database
+        .transaction(|c| auth::bootstrap(c, &credentials))
+        .unwrap();
     (dir, s)
 }
 
@@ -215,12 +217,12 @@ impl FixtureCatalog {
         self.sequence
     }
 
-    fn load(connection: &rusqlite::Connection) -> Result<Self> {
+    fn load(connection: &mut crate::platform::database::Connection<'_>) -> Result<Self> {
         Ok(Self {
             sequence: connection
-                .query_row("SELECT value FROM saturn_sequence WHERE id=1", [], |row| {
-                    row.get(0)
-                })
+                .query_one("SELECT value FROM saturn_sequence WHERE id=1", &[])
+                .map_err(internal)?
+                .try_get(0)
                 .map_err(internal)?,
             apps: modules::applications::api::apps(connection)?,
             channels: modules::applications::api::channels(connection)?,
@@ -232,15 +234,15 @@ impl FixtureCatalog {
         })
     }
 
-    fn save(self, connection: &rusqlite::Connection) -> Result<()> {
+    fn save(self, connection: &mut crate::platform::database::Connection<'_>) -> Result<()> {
         modules::applications::api::import(connection, self.apps, self.channels)?;
         modules::distribution::api::import(connection, self.releases, self.patches)?;
         modules::artifacts::api::import(connection, self.artifacts, self.asset_bundles)?;
         modules::telemetry::api::import(connection, self.events)?;
         connection
             .execute(
-                "UPDATE saturn_sequence SET value=?1 WHERE id=1",
-                [self.sequence],
+                "UPDATE saturn_sequence SET value=$1 WHERE id=1",
+                &[&self.sequence],
             )
             .map_err(internal)?;
         Ok(())

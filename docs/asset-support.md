@@ -34,7 +34,7 @@ shorebird patch \
 
 Run this from the Flutter application directory, with the [Saturn CLI environment](usage.md#2-configure-cli-authentication) set. Use `--allow-asset-diffs` only for assets supported by the integrated overlay. It does not enable native-code patching. The upstream [patch documentation](https://docs.shorebird.dev/code-push/patch/) describes the flag and standard asset restrictions.
 
-Staging subscribers can receive this Dart patch before the bundle is uploaded. Keep test devices from updating during the upload window. Production devices should remain on stable until the matching bundle has been uploaded and checked. Saturn currently does not make the two uploads atomic or block promotion when an asset bundle is missing.
+Create asset-dependent patches with `required_asset_platforms: ["android"]` in the patch creation JSON, before registering code artifacts. All required and registered bundles must finish uploading before promotion or device code selection. Bundle registration after promotion is rejected. The standard Shorebird CLI does not declare this field: do not let it promote an asset-dependent patch automatically; use the management API to create the draft and register its assets before promotion. Existing promoted patches cannot acquire bundles; publish a new patch instead.
 
 ### 2. Find the server patch ID
 
@@ -141,9 +141,9 @@ At startup, the Flutter integration reads the **currently running** Shorebird pa
 - A published, uploaded bundle is downloaded and checked against its SHA-256 before extraction. Files absent from the overlay fall back to the packaged assets.
 - Each patch uses its own cache. Patches do not depend on the previous patch's ZIP.
 - A successful server response saying that no bundle is available selects packaged assets.
-- If a request fails and that running patch already has a cached overlay, the loader can reuse it. Without that cache it falls back to packaged assets. Code requiring a new asset must handle first-download failures rather than assuming the asset is always present.
+- Every load requires online authorization, a valid signed manifest, and a freshly downloaded hash-verified ZIP. Any failure selects packaged assets, including offline startup. Code requiring new assets must handle this result before starting asset-dependent features. Extracted files are never trusted as an offline fallback.
 
-**Roll back patch** stops the server from selecting its code and bundle. Code rollback takes effect after the updater processes it and the application restarts. A successful asset check for the rolled-back patch returns no bundle; an offline startup may still use that patch's cache. If the updater selects an earlier patch, its own bundle can be selected on the next startup. **Restore patch** re-enables the existing channel assignments and bundle selection. Neither action deletes the uploaded ZIP, so administrator inspection still works.
+**Roll back patch** stops the server from selecting its code and bundle. Code rollback takes effect after the updater processes it and the application restarts. A successful asset check for the rolled-back patch returns no bundle; an offline startup selects packaged assets. If the updater selects an earlier patch, its own bundle can be selected on the next startup. **Restore patch** re-enables the existing channel assignments and bundle selection. Neither action deletes the uploaded ZIP, so administrator inspection still works.
 
 ## Supported asset access
 
@@ -151,7 +151,7 @@ At startup, the Flutter integration reads the **currently running** Shorebird pa
 
 OTF/TTF text and icon fonts require explicit `SaturnAssets.loadFont` registration before they are used. Editing `pubspec.yaml`'s `fonts:` section alone does not register downloaded fonts.
 
-Android has device validation. iOS is unverified; the bundled publisher is Android-only. Asset bundles have SHA-256 integrity checks but do not yet have independently signed metadata. Code-patch signing does not sign the separate ZIP. Use HTTPS and account for this security limitation when evaluating production use.
+Android has device validation. iOS is unverified; the bundled publisher is Android-only. Asset manifests use a separate Ed25519 key pinned in the baseline app. Code-patch signing does not sign the separate ZIP. Manifest signatures authenticate content, not freshness: a compromised server can replay a previously signed bundle for the same identity or deny service. Immediate cryptographic revocation needs an additional freshness protocol.
 
 ## Troubleshooting
 
@@ -181,3 +181,18 @@ Management calls accept a bearer token or an authenticated administrator session
 | `GET /asset-objects/{key}`                                                           | Device ZIP download using the capability URL returned by a successful check                                      |
 
 Capability URLs grant access to their object. Keep them out of shared screenshots and logs. The dashboard snapshot exposes the bundle hash but omits upload and download keys.
+
+## Signed asset publishing
+
+Provision a separate Ed25519 asset key (do not reuse Shorebird RSA keys):
+
+```sh
+openssl genpkey -algorithm ED25519 -out asset-private.pem
+openssl pkey -in asset-private.pem -pubout -outform DER -out asset-public.der
+```
+
+Keep the private key outside Git and on the publishing machine only. Pin the final 32 bytes of the DER public key as `trustedPublicKey` in the store baseline. Replacing the server's key must never update this trust anchor. Rotation requires a new trusted baseline.
+
+Add `--asset-signing-key /secure/asset-private.pem --release-version '1.0.0+1' --patch-number 1` to the publisher's `--publish` command. The patch number is the release-local number, not the database patch ID. Incorrect identity values produce signatures the client rejects.
+
+The signed bytes are UTF-8 compact JSON of `["saturn-assets-v1", app_id, release_version, patch_number, platform, lowercase_sha256, size]`. Sign with Ed25519; encode the 64-byte signature in standard base64. The server transports the signature and reconstructs the manifest; trust lives in the baseline client. Unsigned legacy bundles remain inspectable but this client rejects them. Deploy the server/publisher first and ship the updated client and pinned public key in a new store baseline. Run `flutter pub get` and `flutter test` in `packages/saturn_assets` when updating the baseline; the additional `cryptography` dependency and lockfile entry need validation with the Flutter dependency solver.

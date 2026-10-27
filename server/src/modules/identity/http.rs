@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 const COOKIE: &str = "saturn_session";
-const SESSION_SECONDS: i64 = 8 * 60 * 60;
+pub(super) const SESSION_SECONDS: i64 = 8 * 60 * 60;
 
 pub(super) fn cookie_token(headers: &HeaderMap) -> Option<&str> {
     headers
@@ -36,7 +36,7 @@ pub(super) fn cookie_token(headers: &HeaderMap) -> Option<&str> {
         })
 }
 
-fn response(runtime: &Runtime, token: &str, age: i64, value: Value) -> Result<Response> {
+pub(super) fn response(runtime: &Runtime, token: &str, age: i64, value: Value) -> Result<Response> {
     let secure = if runtime.base_url.starts_with("https://") {
         "; Secure"
     } else {
@@ -69,25 +69,8 @@ pub(crate) async fn login(
             "Request origin is not allowed".into(),
         ));
     }
-    let credentials = runtime.dashboard.clone().ok_or_else(|| {
-        ApiError(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Dashboard login has not been configured".into(),
-        )
-    })?;
-    let allowed = {
-        let mut rate = runtime.login_rate.lock().map_err(internal)?;
-        if rate.0.elapsed().as_secs() >= 60 {
-            *rate = (std::time::Instant::now(), 0);
-        }
-        rate.1 = rate.1.saturating_add(1);
-        rate.1 <= 10
-    };
-    if !allowed {
-        return Err(ApiError(
-            StatusCode::TOO_MANY_REQUESTS,
-            "Too many sign-in attempts. Try again in a minute.".into(),
-        ));
+    if let Some(response) = limit_attempt(&runtime)? {
+        return Ok(response);
     }
     if input.username.len() > 128 || input.password.is_empty() || input.password.len() > 1024 {
         return Err(ApiError(
@@ -105,30 +88,50 @@ pub(crate) async fn login(
                 "Sign-in is busy. Try again shortly.".into(),
             )
         })?;
-    let check = credentials.clone();
+    let username = input.username.clone();
+    let found = runtime
+        .database
+        .call(move |c| super::repositories::account_repository::find_login(c, &username))
+        .await?;
+    // A fixed valid dummy hash keeps unknown-user verification on the same expensive path.
+    let check = found
+        .as_ref()
+        .map(|(_, hash)| hash.clone())
+        .unwrap_or_else(|| super::service::dummy_hash().to_owned());
     let valid = tokio::task::spawn_blocking(move || {
         let _slot = slot;
-        service::verify(&check, &input.username, &input.password)
+        service::verify_hash(&check, &input.password)
     })
     .await
     .map_err(internal)?;
+    let valid = valid && found.as_ref().is_some_and(|(a, _)| !a.disabled);
     if !valid {
         return Err(ApiError(
             StatusCode::UNAUTHORIZED,
             "Incorrect username or password".into(),
         ));
     }
+    let (account, checked_hash) = found.expect("verified account");
     let token = format!("{}{}", uid(), uid());
     let now = Utc::now().timestamp();
     let session = Session {
         token_hash: service::token_hash(&token),
-        identity: credentials.identity.clone(),
+        identity: account.id.clone(),
         expires_at: now + SESSION_SECONDS,
     };
     let old_hash = cookie_token(&headers).map(service::token_hash);
+    let user = super::models::Actor::account(&account);
     runtime
         .database
         .call(move |connection| {
+            let current =
+                super::repositories::account_repository::find_login(connection, &account.username)?;
+            if !current.is_some_and(|(a, h)| !a.disabled && h == checked_hash) {
+                return Err(ApiError(
+                    StatusCode::UNAUTHORIZED,
+                    "Credentials changed. Sign in again".into(),
+                ));
+            }
             session_repository::rotate(connection, &session, old_hash.as_deref(), now)
         })
         .await?;
@@ -136,7 +139,7 @@ pub(crate) async fn login(
         &runtime,
         &token,
         SESSION_SECONDS,
-        json!({"username": credentials.username}),
+        json!({"id":user.id,"username": user.name,"role":user.role}),
     )
 }
 
@@ -144,10 +147,12 @@ pub(crate) async fn session(
     State(runtime): State<Runtime>,
     headers: HeaderMap,
 ) -> Result<Json<Value>> {
-    let username = api::session_username(&runtime, &headers)
+    let actor = api::session_actor(&runtime, &headers)
         .await?
         .ok_or_else(|| ApiError(StatusCode::UNAUTHORIZED, "Sign in to continue".into()))?;
-    Ok(Json(json!({"username": username})))
+    Ok(Json(
+        json!({"id":actor.id,"username":actor.name,"role":actor.role}),
+    ))
 }
 
 pub(crate) async fn logout(State(runtime): State<Runtime>, headers: HeaderMap) -> Result<Response> {
@@ -178,6 +183,30 @@ pub(crate) fn routes() -> axum::Router<Runtime> {
         Router::new()
             .route("/login", post(login).layer(DefaultBodyLimit::max(4096)))
             .route("/logout", post(logout))
-            .route("/session", get(session)),
+            .route("/session", get(session))
+            .merge(super::setup::routes()),
     )
+}
+
+/// Login and setup share a process-wide attempt budget.
+pub(super) fn limit_attempt(runtime: &Runtime) -> Result<Option<Response>> {
+    let (allowed, retry_after) = {
+        let mut rate = runtime.login_rate.lock().map_err(internal)?;
+        if rate.0.elapsed().as_secs() >= 60 {
+            *rate = (std::time::Instant::now(), 0);
+        }
+        rate.1 = rate.1.saturating_add(1);
+        (rate.1 <= 10, 60 - rate.0.elapsed().as_secs().min(59))
+    };
+    if !allowed {
+        return Ok(Some(
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                [(header::RETRY_AFTER, retry_after.to_string())],
+                Json(json!({"message":"Too many sign-in attempts. Try again in a minute."})),
+            )
+                .into_response(),
+        ));
+    }
+    Ok(None)
 }

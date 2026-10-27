@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DeploymentHistory from '~/features/deployments/components/DeploymentHistory.vue'
 import { ArrowLeft } from '@lucide/vue'
 import EmptyState from '~/components/shared/EmptyState.vue'
 import PatchTable from '~/features/distribution/components/PatchTable.vue'
@@ -46,6 +47,10 @@ watch(
       </NuxtLink>
     </Button>
     <template v-if="release">
+      <DeploymentHistory
+        :key="release.id"
+        :release="release"
+      />
       <Card>
         <CardHeader>
           <CardTitle>{{ release.version }}</CardTitle>

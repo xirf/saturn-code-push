@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
+import 'package:cryptography/cryptography.dart' as signing;
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -43,15 +44,23 @@ class SaturnAssets {
     required String channel,
     required String platform,
     required int patchNumber,
+    required Uint8List trustedPublicKey,
     AssetBundle? base,
     Directory? cacheDirectory,
     Future<Uint8List> Function(Uri uri, int maxBytes)? fetch,
   }) async {
+    if (trustedPublicKey.length != 32) {
+      throw ArgumentError('Expected a baseline-pinned 32-byte Ed25519 public key');
+    }
     base ??= rootBundle;
     if (patchNumber < 1) return SaturnAssets._(base, patchNumber, 'base');
+    for (final value in [appId, releaseVersion, platform, channel]) {
+      if (!_safePath(value) || value.contains('/')) {
+        throw ArgumentError('Asset identity must be a single safe path component');
+      }
+    }
     final cache = cacheDirectory ?? await getApplicationSupportDirectory();
-    final root = Directory('${cache.path}/saturn_assets/$appId/$releaseVersion/$platform/$patchNumber');
-    final pointer = File('${root.path}/active.json');
+    final root = Directory('${cache.path}/saturn_assets/$appId/$releaseVersion/$platform/$channel/$patchNumber');
     fetch ??= (uri, maxBytes) => _get(uri, maxBytes: maxBytes);
     final query = <String, String>{
       'app_id': appId,
@@ -62,7 +71,7 @@ class SaturnAssets {
     };
     final endpoint = server.resolve('/api/v1/assets/check').replace(queryParameters: query);
     try {
-      final response = await fetch(endpoint, 65536);
+      final response = await fetch(endpoint, 65536).timeout(const Duration(seconds: 30));
       final data = jsonDecode(utf8.decode(response)) as Map<String, dynamic>;
       if (data['asset_bundle_available'] != true) {
         return SaturnAssets._(base, patchNumber, 'base');
@@ -73,11 +82,24 @@ class SaturnAssets {
       if (url.scheme != 'https' && !(server.scheme == 'http' && url.scheme == 'http')) {
         throw const FormatException('Asset URL must use HTTPS');
       }
-      if (hash.length != 64 || size < 1 || size > 32 * 1024 * 1024) {
+      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(hash) || size < 1 || size > 32 * 1024 * 1024) {
         throw const FormatException('Invalid asset bundle metadata');
       }
-      if (!await _hasVerifiedCache(pointer, hash)) {
-        final bytes = await fetch(url, size);
+      final manifest = jsonEncode([
+        'saturn-assets-v1', appId, releaseVersion, patchNumber, platform, hash, size,
+      ]);
+      if (data['manifest'] != manifest ||
+          !await signing.Ed25519().verify(
+            utf8.encode(manifest),
+            signature: signing.Signature(
+              base64Decode(data['signature'] as String),
+              publicKey: signing.SimplePublicKey(trustedPublicKey, type: signing.KeyPairType.ed25519),
+            ),
+          )) {
+        throw const FormatException('Untrusted asset manifest');
+      }
+      {
+        final bytes = await fetch(url, size).timeout(const Duration(seconds: 60));
         if (bytes.length != size || sha256.convert(bytes).toString() != hash) {
           throw const FormatException('Asset bundle SHA-256 mismatch');
         }
@@ -85,9 +107,8 @@ class SaturnAssets {
       }
       return SaturnAssets._(SaturnAssetBundle(root, base), patchNumber, 'downloaded');
     } catch (_) {
-      if (await pointer.exists()) {
-        return SaturnAssets._(SaturnAssetBundle(root, base), patchNumber, 'cache');
-      }
+      // Fail closed: a cached pointer is not evidence that this channel still
+      // authorizes the patch. Online authorization is required on every load.
       return SaturnAssets._(base, patchNumber, 'base');
     }
   }
@@ -117,16 +138,6 @@ bool _safePath(String name) =>
     !name.contains('\\') &&
     !name.contains(':') &&
     name.split('/').every((part) => part.isNotEmpty && part != '.' && part != '..');
-
-Future<bool> _hasVerifiedCache(File pointer, String hash) async {
-  if (!await pointer.exists()) return false;
-  try {
-    final data = jsonDecode(await pointer.readAsString()) as Map<String, dynamic>;
-    return data['sha256'] == hash;
-  } catch (_) {
-    return false;
-  }
-}
 
 Future<Uint8List> _get(Uri uri, {required int maxBytes}) async {
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);

@@ -1,54 +1,38 @@
 use super::super::models::Event;
 use crate::platform::error::{Result, bad, internal};
-use rusqlite::{Connection, params};
+use crate::sql_params as params;
+use postgres::Transaction as Connection;
 
 pub(in crate::modules::telemetry) const RETENTION_LIMIT: usize = 10_000;
 
-pub(in crate::modules::telemetry) fn initialize(connection: &Connection) -> Result<()> {
+pub(in crate::modules::telemetry) fn list(connection: &mut Connection<'_>) -> Result<Vec<Event>> {
     connection
-        .execute_batch(
-            "CREATE TABLE IF NOT EXISTS telemetry_events (
-            id INTEGER PRIMARY KEY,
-            app_id TEXT NOT NULL REFERENCES applications_apps(id),
-            received_at TEXT NOT NULL,
-            event TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS telemetry_events_app ON telemetry_events(app_id);",
+        .query(
+            "SELECT received_at, event FROM telemetry_events ORDER BY id",
+            &[],
         )
-        .map_err(internal)
-}
-
-pub(in crate::modules::telemetry) fn list(connection: &Connection) -> Result<Vec<Event>> {
-    let mut statement = connection
-        .prepare("SELECT received_at, event FROM telemetry_events ORDER BY id")
-        .map_err(internal)?;
-    let rows = statement
-        .query_map([], |row| {
-            let event: String = row.get(1)?;
-            let event = serde_json::from_str(&event).map_err(|error| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    1,
-                    rusqlite::types::Type::Text,
-                    Box::new(error),
-                )
-            })?;
+        .map_err(internal)?
+        .iter()
+        .map(|row| {
             Ok(Event {
-                received_at: row.get(0)?,
-                event,
+                received_at: row.try_get(0).map_err(internal)?,
+                event: serde_json::from_str(&row.try_get::<_, String>(1).map_err(internal)?)
+                    .map_err(internal)?,
             })
         })
-        .map_err(internal)?;
-    rows.collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(internal)
+        .collect()
 }
 
-pub(in crate::modules::telemetry) fn append(connection: &Connection, event: &Event) -> Result<()> {
+pub(in crate::modules::telemetry) fn append(
+    connection: &mut Connection<'_>,
+    event: &Event,
+) -> Result<()> {
     let app_id = event.event["app_id"]
         .as_str()
         .ok_or_else(|| bad("Event requires app_id"))?;
     connection
         .execute(
-            "INSERT INTO telemetry_events(app_id, received_at, event) VALUES (?1, ?2, ?3)",
+            "INSERT INTO telemetry_events(app_id, received_at, event) VALUES ($1, $2, $3)",
             params![
                 app_id,
                 event.received_at,
@@ -59,21 +43,51 @@ pub(in crate::modules::telemetry) fn append(connection: &Connection, event: &Eve
     Ok(())
 }
 
-pub(in crate::modules::telemetry) fn prune(connection: &Connection) -> Result<()> {
+pub(in crate::modules::telemetry) fn prune(connection: &mut Connection<'_>) -> Result<()> {
     let count: i64 = connection
-        .query_row("SELECT COUNT(*) FROM telemetry_events", [], |row| {
-            row.get(0)
-        })
+        .query_one("SELECT COUNT(*) FROM telemetry_events", &[])
+        .map_err(internal)?
+        .try_get(0)
         .map_err(internal)?;
     if count >= RETENTION_LIMIT as i64 {
         connection
             .execute(
                 "DELETE FROM telemetry_events WHERE id IN (
-                SELECT id FROM telemetry_events ORDER BY id LIMIT ?1
+                SELECT id FROM telemetry_events ORDER BY id LIMIT $1
             )",
-                [count - 9_000],
+                &[&(count - 9_000)],
             )
             .map_err(internal)?;
     }
     Ok(())
+}
+
+pub(in crate::modules::telemetry) fn contains_id(
+    connection: &mut Connection<'_>,
+    app: &str,
+    id: &str,
+) -> Result<bool> {
+    connection.query_one("SELECT EXISTS(SELECT 1 FROM telemetry_events WHERE app_id=$1 AND (event::jsonb ->> 'event_id')=$2)", params![app,id]).map_err(internal)?.try_get(0).map_err(internal)
+}
+
+/// The app index bounds reads before deserializing event bodies.
+pub(in crate::modules::telemetry) fn list_app(
+    connection: &mut Connection<'_>,
+    app: &str,
+) -> Result<Vec<Event>> {
+    connection
+        .query(
+            "SELECT received_at, event FROM telemetry_events WHERE app_id=$1 ORDER BY id",
+            &[&app],
+        )
+        .map_err(internal)?
+        .iter()
+        .map(|row| {
+            Ok(Event {
+                received_at: row.try_get(0).map_err(internal)?,
+                event: serde_json::from_str(&row.try_get::<_, String>(1).map_err(internal)?)
+                    .map_err(internal)?,
+            })
+        })
+        .collect()
 }

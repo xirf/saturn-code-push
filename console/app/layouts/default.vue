@@ -22,7 +22,9 @@ const showApplicationPicker = computed(() =>
   ['/', '/releases', '/patches', '/analytics'].includes(route.path),
 )
 const showCreateApplication = computed(
-  () => route.path === '/applications' || !workspace.applications.value.length,
+  () =>
+    identity.session.data.value?.role === 'admin' &&
+    (route.path === '/applications' || !workspace.applications.value.length),
 )
 
 async function signOut() {

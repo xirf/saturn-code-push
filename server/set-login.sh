@@ -47,5 +47,5 @@ mv -- "$temporary" "$env_file"
 unset hash
 
 "$engine" compose --env-file "$env_file" -f "$server_dir/compose.yaml" \
-    up -d --no-deps code-push
-printf '%s\n' 'Dashboard credentials updated. Existing browser sessions are invalidated.'
+    up -d code-push
+printf '%s\n' 'Bootstrap credentials configured. Existing accounts are unchanged; manage passwords in Settings.'

@@ -1,4 +1,3 @@
-use super::models::Credentials;
 use crate::platform::error::{Result, internal};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use sha2::{Digest, Sha256};
@@ -11,14 +10,16 @@ pub(crate) fn hash_password(password: &str) -> Result<String> {
         .map_err(internal)
 }
 
-pub(super) fn verify(credentials: &Credentials, username: &str, password: &str) -> bool {
-    let Ok(hash) = PasswordHash::new(&credentials.hash) else {
-        return false;
-    };
-    Argon2::default()
-        .verify_password(password.as_bytes(), &hash)
-        .is_ok()
-        && username == credentials.username
+pub(super) fn verify_hash(hash: &str, password: &str) -> bool {
+    PasswordHash::new(hash).is_ok_and(|hash| {
+        Argon2::default()
+            .verify_password(password.as_bytes(), &hash)
+            .is_ok()
+    })
+}
+pub(super) fn dummy_hash() -> &'static str {
+    static HASH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    HASH.get_or_init(|| hash_password("invalid-user-dummy-password").expect("Argon2 hashing"))
 }
 
 pub(super) fn token_hash(token: &str) -> String {

@@ -1,5 +1,19 @@
 export const documentationSources = [
   {
+    slug: 'accounts-and-postgresql',
+    title: 'Accounts and PostgreSQL',
+    description: 'Roles, scoped API keys, audit history, and SQLite migration.',
+    section: 'Get started',
+    source: 'docs/accounts-and-postgresql.md',
+  },
+  {
+    slug: 'github-deployments',
+    title: 'GitHub CI/CD',
+    description: 'Link deployments, report GitHub Actions builds, and compare changes.',
+    section: 'Get started',
+    source: 'docs/github-deployments.md',
+  },
+  {
     slug: 'introduction',
     title: 'Introduction',
     description: 'What Saturn provides and how to get started.',

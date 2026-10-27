@@ -1,6 +1,6 @@
 use super::*;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn anonymous_events_cannot_create_apps_or_accept_unknown_types() {
     let (_dir, s) = service();
     fixture(&s);
@@ -44,7 +44,7 @@ async fn anonymous_events_cannot_create_apps_or_accept_unknown_types() {
     assert_eq!(s.read(|d| Ok(d.events.len())).unwrap(), 1);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn analytics_are_scoped_and_distinguish_reports_from_installs() {
     let (_dir, s) = service();
     fixture(&s);
@@ -90,7 +90,7 @@ async fn analytics_are_scoped_and_distinguish_reports_from_installs() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn device_requests_are_rate_limited() {
     let (_dir, s) = service();
     *s.rate.lock().unwrap() = (std::time::Instant::now(), 100);
@@ -109,4 +109,39 @@ async fn device_requests_are_rate_limited() {
     )
     .await;
     assert_eq!(response.0, StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn event_ids_deduplicate_retries_and_validate_ids() {
+    let (_dir, s) = service();
+    fixture(&s);
+    for kind in ["__patch_first_launch__", "__patch_health__"] {
+        for _ in 0..2 {
+            assert_eq!(
+                call(
+                    &s,
+                    "POST",
+                    "/api/v1/patches/events",
+                    json!({"event":{"app_id":"app", "type":kind, "event_id":kind}}),
+                    false
+                )
+                .await
+                .0,
+                StatusCode::OK
+            );
+        }
+    }
+    assert_eq!(s.read(|d| Ok(d.events.len())).unwrap(), 2);
+    assert_eq!(
+        call(
+            &s,
+            "POST",
+            "/api/v1/patches/events",
+            json!({"event":{"app_id":"app", "type":"__patch_health__", "event_id":""}}),
+            false
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
 }

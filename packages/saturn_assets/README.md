@@ -72,6 +72,7 @@ Future<void> main() async {
     channel: 'stable',
     platform: 'android',
     patchNumber: currentPatch?.number ?? 0,
+    trustedPublicKey: pinnedAssetPublicKey, // 32 Ed25519 bytes compiled into the baseline
   );
 
   runApp(
@@ -94,7 +95,7 @@ Future<void> main() async {
 
 Use the same server, app ID, exact store release version, and channel as the running app's code updater. Replace the example values; `1.0.0+1` is the baseline version, not a new version for every patch. `readNextPatch()` refers to downloaded code for a future launch and must not select assets for code that is still running from an older patch.
 
-The example only loads assets. Keep your normal code-update check/download flow. A background download becomes the running patch after restart; run this loader again on that startup. Network failure can select a cached overlay or packaged assets, so code depending on a newly introduced file must provide an appropriate error/fallback UI.
+The example only loads assets. Keep your normal code-update check/download flow. A background download becomes the running patch after restart; run this loader again on that startup. Network failure selects packaged assets, so code depending on a newly introduced file must provide an appropriate error/fallback UI.
 
 ## Read assets in widgets
 
@@ -162,9 +163,9 @@ The loader does not switch the Shorebird updater's channel, download Dart patche
 
 ## Cache, limits, and security
 
-The loader verifies the downloaded ZIP's SHA-256 against server metadata before extraction. It rejects unsafe archive paths, requires `AssetManifest.bin`, and limits ZIP download size to 32 MiB and expanded assets to 64 MiB/4096 entries. The cache belongs to the app/release/platform/running patch. Files not present in the overlay fall back to packaged files.
+The loader verifies the manifest's Ed25519 signature against the baseline-pinned key, then verifies the downloaded ZIP's SHA-256 before extraction. It rejects unsafe archive paths, requires `AssetManifest.bin`, and limits ZIP download size to 32 MiB and expanded assets to 64 MiB/4096 entries. The cache belongs to the app/release/platform/running patch. Files not present in the overlay fall back to packaged files.
 
-A successful server response reporting no bundle uses packaged assets. A failed request can reuse that running patch's existing cache. Server rollback cannot be observed while the device is offline; do not assume rollback removes cached data instantly.
+A successful server response reporting no bundle uses packaged assets. A failed request selects packaged assets. The loader never selects extracted cached overlays offline.
 
 Use HTTPS. Asset metadata is not independently signed yet: SHA-256 detects a mismatch against that metadata, but does not protect against a compromised server replacing both. Signing Dart code patches does not sign the asset ZIP.
 
@@ -173,3 +174,7 @@ Android has recorded device validation. iOS remains unverified. See [supported a
 ## License
 
 Apache-2.0. See the repository [license](../../LICENSE) and [third-party notices](../../THIRD_PARTY_NOTICES.md).
+
+### Signed manifests and offline policy
+
+`trustedPublicKey` is required. Define `pinnedAssetPublicKey` as a 32-byte `Uint8List` compiled into the app, never fetched from Saturn. See [signed publishing](../../docs/asset-support.md#signed-asset-publishing) for key provisioning and publisher flags. This is a breaking API change requiring a new baseline release. Every startup downloads and verifies an Ed25519 manifest and ZIP; unsigned metadata, network errors and rollback responses select packaged assets. Previously extracted files are not reused offline. Handle missing new assets before enabling features that require them. Signed content does not prove freshness against a compromised server replaying old responses.

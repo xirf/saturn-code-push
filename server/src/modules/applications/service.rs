@@ -1,4 +1,4 @@
-use rusqlite::Connection;
+use postgres::Transaction as Connection;
 use serde_json::{Value, json};
 
 use super::{
@@ -22,18 +22,22 @@ fn app_json(app: &App) -> Value {
     })
 }
 
-pub(super) fn list_apps(connection: &Connection) -> Result<Value> {
+pub(super) fn list_apps(connection: &mut Connection<'_>, scope: Option<String>) -> Result<Value> {
     let apps = app_repository::list(connection)?;
-    let apps: Vec<Value> = apps.iter().map(app_json).collect();
+    let apps: Vec<Value> = apps
+        .iter()
+        .filter(|a| scope.as_ref().is_none_or(|id| &a.id == id))
+        .map(app_json)
+        .collect();
     Ok(json!({"apps": apps}))
 }
 
-pub(super) fn get_app(connection: &Connection, app_id: String) -> Result<Value> {
+pub(super) fn get_app(connection: &mut Connection<'_>, app_id: String) -> Result<Value> {
     let app = app_repository::find(connection, &app_id)?;
     Ok(app_json(&app))
 }
 
-pub(super) fn create_app(connection: &Connection, input: Value) -> Result<Value> {
+pub(super) fn create_app(connection: &mut Connection<'_>, input: Value) -> Result<Value> {
     let app = App {
         id: uid(),
         display_name: text(&input, "display_name")?,
@@ -51,7 +55,7 @@ pub(super) fn create_app(connection: &Connection, input: Value) -> Result<Value>
     Ok(app_json(&app))
 }
 
-pub(super) fn list_channels(connection: &Connection, app_id: String) -> Result<Value> {
+pub(super) fn list_channels(connection: &mut Connection<'_>, app_id: String) -> Result<Value> {
     app_repository::find(connection, &app_id)?;
     let channels: Vec<Channel> = channel_repository::list(connection)?
         .into_iter()
@@ -61,7 +65,7 @@ pub(super) fn list_channels(connection: &Connection, app_id: String) -> Result<V
 }
 
 pub(super) fn create_channel(
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     app_id: String,
     input: Value,
 ) -> Result<Value> {

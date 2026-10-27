@@ -1,6 +1,6 @@
 use super::*;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unpublished_or_incomplete_patch_is_never_offered() {
     let (_dir, s) = service();
     fixture(&s);
@@ -39,7 +39,7 @@ async fn unpublished_or_incomplete_patch_is_never_offered() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn selection_is_scoped_and_rollback_can_return_to_previous_patch() {
     let (_dir, s) = service();
     fixture(&s);
@@ -75,4 +75,55 @@ async fn selection_is_scoped_and_rollback_can_return_to_previous_patch() {
     q.current_patch_number = None;
     q.patch_number = Some(1);
     assert_eq!(select_patch(&s, &q).unwrap()["patch_available"], false);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn declared_assets_block_promotion_until_uploaded() {
+    let (_dir, s) = service();
+    fixture(&s);
+    let (status, patch) = call(
+        &s,
+        "POST",
+        "/api/v1/apps/app/patches",
+        json!({"release_id":2,"required_asset_platforms":["android"]}),
+        true,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let id = patch["id"].as_i64().unwrap();
+    // Uploading code alone must never make an asset-dependent patch eligible.
+    s.write(|d| {
+        d.artifacts.push(Artifact {
+            id: 100,
+            app_id: "app".into(),
+            release_id: 2,
+            patch_id: Some(id),
+            arch: "aarch64".into(),
+            platform: "android".into(),
+            hash: "a".repeat(64),
+            hash_signature: None,
+            size: 3,
+            can_sideload: false,
+            signing: None,
+            upload_key: uid(),
+            download_key: uid(),
+            uploaded: true,
+        });
+        Ok(())
+    })
+    .unwrap();
+    let (_, selected) = call(&s, "POST", "/api/v1/patches/check", json!({"app_id":"app", "release_version":"1.0.0+1", "platform":"android", "arch":"aarch64", "channel":"stable"}), false).await;
+    assert_eq!(selected["patch_available"], false);
+    assert_eq!(
+        call(
+            &s,
+            "POST",
+            "/api/v1/apps/app/patches/promote",
+            json!({"patch_id":id,"channel_id":1}),
+            true
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
 }

@@ -4,11 +4,11 @@ use crate::platform::{
     error::{Result, bad},
     values::{now, text},
 };
-use rusqlite::Connection;
+use postgres::Transaction as Connection;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 
-pub(super) fn event(connection: &Connection, input: Value) -> Result<Value> {
+pub(super) fn event(connection: &mut Connection<'_>, input: Value) -> Result<Value> {
     let e = input
         .get("event")
         .filter(|e| e.is_object())
@@ -19,6 +19,8 @@ pub(super) fn event(connection: &Connection, input: Value) -> Result<Value> {
     if ![
         "__patch_download__",
         "__patch_install__",
+        "__patch_first_launch__",
+        "__patch_health__",
         "__patch_install_failure__",
         "__patch_update_failure__",
     ]
@@ -27,6 +29,15 @@ pub(super) fn event(connection: &Connection, input: Value) -> Result<Value> {
         return Err(bad("Unknown event type"));
     }
     applications::api::require(connection, &app)?;
+    if let Some(id) = e.get("event_id") {
+        let id = id
+            .as_str()
+            .filter(|id| !id.is_empty() && id.len() <= 128)
+            .ok_or_else(|| bad("event_id must contain 1 to 128 bytes"))?;
+        if event_repository::contains_id(connection, &app, id)? {
+            return Ok(json!({}));
+        }
+    }
     let event = Event {
         received_at: now(),
         event: e,
@@ -36,8 +47,19 @@ pub(super) fn event(connection: &Connection, input: Value) -> Result<Value> {
     Ok(json!({}))
 }
 
-pub(super) fn analytics(connection: &Connection, query: HashMap<String, String>) -> Result<Value> {
-    let events = super::api::events(connection)?;
+pub(super) fn analytics(
+    connection: &mut Connection<'_>,
+    query: HashMap<String, String>,
+) -> Result<Value> {
+    let events = if let Some(app) = query.get("app_id") {
+        event_repository::list_app(connection, app)?
+            .into_iter()
+            .map(serde_json::to_value)
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(crate::platform::error::internal)?
+    } else {
+        super::api::events(connection)?
+    };
     let mut counts: HashMap<String, u64> = HashMap::new();
     let mut daily: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
     let mut clients = HashSet::new();
@@ -81,6 +103,6 @@ pub(super) fn analytics(connection: &Connection, query: HashMap<String, String>)
         "patch_events": patches,
         "retained_events": total,
         "retention_limit": event_repository::RETENTION_LIMIT,
-        "measurement": "Client-reported events in the retained window; duplicates are counted.",
+        "measurement": "Client-reported events in the retained window; event_id retries are deduplicated per app within this window. Legacy events without IDs count separately. Download, install, first launch and health are distinct reports, not verified installations.",
     }))
 }

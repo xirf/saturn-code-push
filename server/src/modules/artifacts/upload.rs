@@ -2,7 +2,7 @@ use crate::platform::{
     database::Database,
     error::{Result, bad, internal},
 };
-use rusqlite::Connection;
+use postgres::Transaction as Connection;
 use sha2::{Digest, Sha256};
 use std::{cell::Cell, path::PathBuf};
 use tempfile::NamedTempFile;
@@ -69,7 +69,7 @@ pub(super) async fn publish<F>(
     update: F,
 ) -> Result<()>
 where
-    F: FnOnce(&Connection) -> Result<()> + Send + 'static,
+    F: FnOnce(&mut Connection<'_>) -> Result<()> + Send + 'static,
 {
     tokio::task::spawn_blocking(move || {
         let published = Cell::new(false);
@@ -77,7 +77,7 @@ where
             |connection| {
                 // The transaction validates the one-use upload before publishing bytes.
                 update(connection)?;
-                // A crash before the SQLite commit can leave a file for a pending row.
+                // A crash before the database commit can leave a file for a pending row.
                 // Replacing it is safe here: update rejected any already-published row.
                 let file = temporary
                     .persist(&destination)

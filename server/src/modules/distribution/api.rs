@@ -1,23 +1,19 @@
 pub(crate) use super::models::{Patch, Release};
 use super::repositories::{patch_repository, release_repository};
 use crate::platform::error::Result;
-use rusqlite::Connection;
+use postgres::Transaction as Connection;
 
-pub(crate) fn initialize(connection: &Connection) -> Result<()> {
-    super::repositories::initialize(connection)
-}
-
-pub(crate) fn releases(connection: &Connection) -> Result<Vec<Release>> {
+pub(crate) fn releases(connection: &mut Connection<'_>) -> Result<Vec<Release>> {
     release_repository::list(connection)
 }
 
-pub(crate) fn patches(connection: &Connection) -> Result<Vec<Patch>> {
+pub(crate) fn patches(connection: &mut Connection<'_>) -> Result<Vec<Patch>> {
     patch_repository::list(connection)
 }
 
 /// Used by the schema migration and test fixtures, never by request handlers.
 pub(crate) fn import(
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     releases: Vec<Release>,
     patches: Vec<Patch>,
 ) -> Result<()> {
@@ -30,7 +26,7 @@ pub(crate) fn import(
     Ok(())
 }
 
-pub(crate) fn release(connection: &Connection, app: &str, id: i64) -> Result<Release> {
+pub(crate) fn release(connection: &mut Connection<'_>, app: &str, id: i64) -> Result<Release> {
     let release = release_repository::find(connection, id)?;
     if release.app_id != app {
         return Err(crate::platform::error::missing());
@@ -38,7 +34,7 @@ pub(crate) fn release(connection: &Connection, app: &str, id: i64) -> Result<Rel
     Ok(release)
 }
 
-pub(crate) fn patch(connection: &Connection, app: &str, id: i64) -> Result<Patch> {
+pub(crate) fn patch(connection: &mut Connection<'_>, app: &str, id: i64) -> Result<Patch> {
     let patch = patch_repository::find(connection, id)?;
     release(connection, app, patch.release_id)?;
     Ok(patch)
@@ -49,7 +45,7 @@ pub(crate) use super::dto::Check;
 #[cfg(test)]
 pub(crate) fn select_for_test(
     runtime: &crate::bootstrap::Runtime,
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     input: &Check,
 ) -> Result<serde_json::Value> {
     super::service::select_patch(runtime, connection, input)
@@ -57,7 +53,7 @@ pub(crate) fn select_for_test(
 
 #[cfg(test)]
 pub(crate) fn rollback_for_test(
-    connection: &Connection,
+    connection: &mut Connection<'_>,
     app: String,
     release: i64,
     patch: i64,
