@@ -1,129 +1,148 @@
 <script setup lang="ts">
-import StorageSettings from '~/features/storage/components/StorageSettings.vue'
-import GitHubIntegration from '~/features/integrations/components/GitHubIntegration.vue'
-import AccessManagement from '~/features/access/components/AccessManagement.vue'
-import { Copy, ShieldCheck, LogOut, Terminal } from '@lucide/vue'
-import { toast } from 'vue-sonner'
-import ErrorNotice from '~/components/shared/ErrorNotice.vue'
+import { ScrollArea } from '~/components/ui/scroll-area'
+import { Activity, GitBranch, HardDrive, KeyRound, Server, UsersRound } from '@lucide/vue'
 import { useIdentity } from '~/features/identity/composables/useIdentity'
-import { errorMessage } from '~/lib/api/client'
 
-definePageMeta({
-  middleware: 'auth',
-  title: 'Settings',
-  description: 'Accounts, API keys, and server access.',
-})
+definePageMeta({ middleware: 'auth' })
+const route = useRoute()
 const identity = useIdentity()
-const origin = ref('')
-const error = ref('')
-onMounted(() => {
-  origin.value = window.location.origin
-})
-
-async function copy() {
-  try {
-    await navigator.clipboard.writeText(origin.value)
-    toast.success('API origin copied')
-  } catch {
-    toast.error('Clipboard unavailable. Select and copy the origin manually.')
-  }
-}
-
-async function logout() {
-  try {
-    await identity.logout.mutateAsync()
-  } catch (cause) {
-    error.value = errorMessage(cause)
-  }
-}
+const isAdmin = computed(() => identity.session.data.value?.role === 'admin')
+const sections = computed(() => [
+  {
+    label: 'Configuration',
+    links: [
+      { to: '/settings/server/connection', label: 'General', icon: Server },
+      ...(isAdmin.value
+        ? [{ to: '/settings/server/storage', label: 'Artifact storage', icon: HardDrive }]
+        : []),
+    ],
+  },
+  {
+    label: 'Connections',
+    links: isAdmin.value
+      ? [{ to: '/settings/integrations/github', label: 'GitHub', icon: GitBranch }]
+      : [],
+  },
+  ...(isAdmin.value
+    ? [
+        {
+          label: 'Management',
+          links: [
+            { to: '/settings/management/accounts', label: 'Accounts', icon: UsersRound },
+            { to: '/settings/management/api-keys', label: 'API keys', icon: KeyRound },
+          ],
+        },
+        {
+          label: 'Compliance',
+          links: [{ to: '/settings/management/audit', label: 'Audit history', icon: Activity }],
+        },
+      ]
+    : []),
+])
+const currentPath = computed(() => route.path)
 </script>
 
 <template>
-  <div class="space-y-6">
-    <ErrorNotice
-      v-if="error"
-      :message="error"
-    />
-    <div class="grid gap-6 xl:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <CardTitle>Connection</CardTitle>
-          <CardDescription>One origin for your console and update API.</CardDescription>
-        </CardHeader>
-        <CardContent class="space-y-6">
-          <div class="flex items-center gap-3">
-            <span class="shrink-0 text-sm text-muted-foreground">API origin</span>
-            <code
-              class="min-w-0 flex-1 truncate text-xs"
-              :title="origin"
-            >
-              {{ origin }}
-            </code>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Copy API origin"
-              @click="copy"
-            >
-              <Copy class="size-4" />
-            </Button>
-          </div>
-          <Separator />
-          <div class="flex items-start gap-3">
-            <Terminal class="mt-1 size-4 shrink-0 text-muted-foreground" />
-            <div class="space-y-2">
-              <h2 class="text-sm font-medium">Connect your CLI</h2>
-              <p class="text-sm leading-relaxed text-muted-foreground">
-                Use your server's API key for CLI requests. Dashboard sessions stay in an HTTP-only
-                cookie.
-              </p>
-              <code class="block break-all rounded-md bg-muted p-3 text-xs">
-                SHOREBIRD_HOSTED_URL={{ origin }}
-              </code>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Access & session</CardTitle>
-          <CardDescription>Your account session.</CardDescription>
-        </CardHeader>
-        <CardContent class="space-y-5">
-          <div class="flex justify-between text-sm">
-            <span class="text-muted-foreground">Username</span>
-            <span>{{ identity.session.data.value?.username }}</span>
-          </div>
-          <div class="flex justify-between text-sm">
-            <span class="text-muted-foreground">Session lifetime</span>
-            <span>8 hours</span>
-          </div>
-          <div class="flex justify-between text-sm">
-            <span class="text-muted-foreground">Role</span>
-            <Badge variant="secondary">{{ identity.session.data.value?.role }}</Badge>
-          </div>
-          <Separator />
-          <div class="flex items-start gap-3">
-            <ShieldCheck class="mt-1 size-4 shrink-0 text-muted-foreground" />
-            <p class="text-sm leading-relaxed text-muted-foreground">
-              Manage your password below. Administrators can manage accounts and CI keys.
-            </p>
-          </div>
-        </CardContent>
-        <CardFooter>
-          <Button
-            variant="outline"
-            :disabled="identity.logout.asyncStatus.value === 'loading'"
-            @click="logout"
+  <div
+    class="grid min-w-0 gap-6 lg:-mx-8 lg:-my-7 lg:min-h-[calc(100svh-3.5rem)] lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-0"
+  >
+    <aside class="hidden border-r bg-card lg:sticky lg:top-14 lg:block lg:h-[calc(100svh-3.5rem)]">
+      <ScrollArea class="h-full">
+        <div class="border-b px-5 py-5">
+          <h2 class="text-base font-semibold">Settings</h2>
+          <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
+            Accounts, integrations, and server configuration.
+          </p>
+        </div>
+        <nav
+          aria-label="Settings navigation"
+          class="space-y-4 p-3 pb-8"
+        >
+          <section
+            v-for="section in sections"
+            :key="section.label"
+            class="space-y-1"
           >
-            <LogOut class="size-4" />
-            Sign out
-          </Button>
-        </CardFooter>
-      </Card>
+            <h3
+              class="px-3 pt-2 text-sm font-medium uppercase tracking-wider text-muted-foreground"
+            >
+              {{ section.label }}
+            </h3>
+            <NuxtLink
+              v-for="link in section.links"
+              :key="link.to"
+              :to="link.to"
+              :aria-current="currentPath === link.to ? 'page' : undefined"
+              :class="[
+                'flex min-h-9 items-center gap-2.5 rounded-md px-3 text-sm transition-colors',
+                currentPath === link.to
+                  ? 'bg-muted font-medium text-foreground'
+                  : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
+              ]"
+            >
+              <component
+                :is="link.icon"
+                class="size-4 shrink-0"
+                aria-hidden="true"
+              />
+              {{ link.label }}
+            </NuxtLink>
+          </section>
+        </nav>
+      </ScrollArea>
+    </aside>
+
+    <div class="flex w-full min-w-0 justify-center">
+      <div class="w-full min-w-0 max-w-5xl px-5 py-6 sm:px-7 lg:px-8 lg:py-7">
+        <div class="mb-5 lg:hidden">
+          <h2 class="text-lg font-semibold">Settings</h2>
+          <p class="mt-1 text-sm text-muted-foreground">
+            Accounts, integrations, and server configuration.
+          </p>
+        </div>
+        <div class="mb-5 lg:hidden">
+          <label
+            for="settings-page"
+            class="sr-only"
+          >
+            Settings section
+          </label>
+          <Select
+            :model-value="currentPath"
+            @update:model-value="(path) => navigateTo(String(path))"
+          >
+            <SelectTrigger
+              id="settings-page"
+              class="w-full"
+              aria-label="Settings section"
+            >
+              <SelectValue placeholder="Choose a settings section" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup
+                v-for="section in sections"
+                :key="section.label"
+              >
+                <SelectLabel>{{ section.label }}</SelectLabel>
+                <SelectItem
+                  v-for="link in section.links"
+                  :key="link.to"
+                  :value="link.to"
+                >
+                  {{ link.label }}
+                </SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
+        <header class="mb-5">
+          <h1 class="font-heading text-2xl font-semibold tracking-[-0.035em]">
+            {{ route.meta.title }}
+          </h1>
+          <p class="mt-1.5 text-[13px] text-muted-foreground">{{ route.meta.description }}</p>
+        </header>
+        <NuxtPage />
+      </div>
     </div>
-    <StorageSettings />
-    <GitHubIntegration />
-    <AccessManagement />
   </div>
 </template>

@@ -19,7 +19,11 @@ const query = useQuery({
 })
 </script>
 <template>
-  <Card v-if="identity.session.data.value?.role === 'admin'">
+  <Card
+    v-if="identity.session.data.value?.role === 'admin'"
+    id="storage"
+    class="scroll-mt-6"
+  >
     <CardHeader>
       <CardTitle>Artifact storage</CardTitle>
       <CardDescription>Automatic folders for apps, releases, and patches.</CardDescription>
