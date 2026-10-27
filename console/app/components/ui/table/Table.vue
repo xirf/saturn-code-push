@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { cn } from 'cn'
+import { ScrollArea, ScrollBar } from '~/components/ui/scroll-area'
 
 const props = defineProps<{
   class?: HTMLAttributes['class']
@@ -8,9 +9,9 @@ const props = defineProps<{
 </script>
 
 <template>
-  <div
+  <ScrollArea
     data-slot="table-container"
-    class="relative w-full overflow-x-auto"
+    class="w-full"
   >
     <table
       data-slot="table"
@@ -18,5 +19,6 @@ const props = defineProps<{
     >
       <slot />
     </table>
-  </div>
+    <ScrollBar orientation="horizontal" />
+  </ScrollArea>
 </template>

@@ -4,6 +4,7 @@ import { useSessionScope } from '~/features/identity/stores/session-scope'
 import { useWorkspace } from '~/features/workspace/composables/useWorkspace'
 import { useIdentity } from '~/features/identity/composables/useIdentity'
 import { request, errorMessage } from '~/lib/api/client'
+import { ScrollArea } from '~/components/ui/scroll-area'
 import { z } from '~/lib/validation'
 const schema = z.object({
   configured: z.boolean(),
@@ -32,6 +33,7 @@ const form = reactive({ app_id: '', repository: '', installation_id: '' })
 const busy = ref(false)
 const error = ref('')
 const notice = ref('')
+const connectionOpen = ref(false)
 async function action(path: string, body: unknown) {
   if (busy.value) return
   busy.value = true
@@ -41,6 +43,7 @@ async function action(path: string, body: unknown) {
   try {
     await request(path, { method: 'POST', body })
     if (generation !== scope.generation) return
+    if (path === '/admin/integrations/github') connectionOpen.value = false
     await cache.invalidateQueries({ key: ['private', generation] })
     notice.value = path.endsWith('/sync')
       ? 'Refresh queued. Linked runs will update shortly.'
@@ -53,7 +56,11 @@ async function action(path: string, body: unknown) {
 }
 </script>
 <template>
-  <Card v-if="identity.session.data.value?.role === 'admin'">
+  <Card
+    v-if="identity.session.data.value?.role === 'admin'"
+    id="github"
+    class="scroll-mt-6"
+  >
     <CardHeader>
       <CardTitle>GitHub integration</CardTitle>
       <CardDescription>
@@ -100,63 +107,83 @@ async function action(path: string, body: unknown) {
           <p class="break-all text-xs text-muted-foreground">
             Webhook URL: {{ query.data.value.webhook_url }}
           </p>
-          <form
-            class="grid gap-4 sm:grid-cols-2"
-            @submit.prevent="
-              action('/admin/integrations/github', {
-                ...form,
-                installation_id: Number(form.installation_id),
-              })
-            "
-          >
-            <label class="space-y-2 text-sm">
-              Application
-              <select
-                v-model="form.app_id"
-                aria-label="GitHub application"
-                required
-                class="block w-full rounded-md border bg-background p-2"
-              >
-                <option
-                  value=""
-                  disabled
+          <Button @click="connectionOpen = true">Connect a repository</Button>
+          <Dialog v-model:open="connectionOpen">
+            <DialogContent class="max-h-[90svh] overflow-hidden">
+              <ScrollArea class="max-h-[80svh] w-full pr-3">
+                <DialogHeader>
+                  <DialogTitle>Connect a repository</DialogTitle>
+                  <DialogDescription>
+                    Link an application to a repository the GitHub App can access.
+                  </DialogDescription>
+                </DialogHeader>
+                <form
+                  class="grid gap-4"
+                  @submit.prevent="
+                    action('/admin/integrations/github', {
+                      ...form,
+                      installation_id: Number(form.installation_id),
+                    })
+                  "
                 >
-                  Select an application
-                </option>
-                <option
-                  v-for="item in workspace.applications.value"
-                  :key="item.id"
-                  :value="item.id"
+                  <label class="space-y-2 text-sm">
+                    Application
+                    <Select
+                      :model-value="form.app_id"
+                      @update:model-value="(value) => (form.app_id = String(value ?? ''))"
+                    >
+                      <SelectTrigger
+                        aria-label="GitHub application"
+                        class="w-full"
+                      >
+                        <SelectValue placeholder="Select an application" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem
+                          v-for="item in workspace.applications.value"
+                          :key="item.id"
+                          :value="item.id"
+                        >
+                          {{ item.display_name }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </label>
+                  <label class="space-y-2 text-sm">
+                    GitHub repository
+                    <Input
+                      v-model="form.repository"
+                      placeholder="owner/repository"
+                      required
+                      maxlength="256"
+                    />
+                  </label>
+                  <label class="space-y-2 text-sm">
+                    Installation ID
+                    <Input
+                      v-model="form.installation_id"
+                      type="number"
+                      min="1"
+                      required
+                    />
+                  </label>
+                  <Button
+                    type="submit"
+                    :disabled="busy || !form.app_id"
+                  >
+                    Connect repository
+                  </Button>
+                </form>
+                <p
+                  v-if="error"
+                  role="alert"
+                  class="text-sm text-destructive"
                 >
-                  {{ item.display_name }}
-                </option>
-              </select>
-            </label>
-            <label class="space-y-2 text-sm">
-              GitHub repository
-              <Input
-                v-model="form.repository"
-                placeholder="owner/repository"
-                required
-                maxlength="256"
-              />
-            </label>
-            <label class="space-y-2 text-sm">
-              Installation ID
-              <Input
-                v-model="form.installation_id"
-                type="number"
-                min="1"
-                required
-              />
-            </label>
-            <Button
-              type="submit"
-              :disabled="busy || !form.app_id"
-            >
-              Connect repository
-            </Button>
-          </form>
+                  {{ error }}
+                </p>
+              </ScrollArea>
+            </DialogContent>
+          </Dialog>
           <Button
             variant="outline"
             :disabled="busy"

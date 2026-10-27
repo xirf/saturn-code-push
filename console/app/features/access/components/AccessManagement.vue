@@ -4,8 +4,10 @@ import type { Account } from '../types/access'
 import { useWorkspace } from '~/features/workspace/composables/useWorkspace'
 import { errorMessage } from '~/lib/api/client'
 import { formatDate } from '~/lib/format'
+import { ScrollArea } from '~/components/ui/scroll-area'
 
-const access = useAccess()
+const props = defineProps<{ section: 'accounts' | 'keys' | 'password' }>()
+const access = useAccess(props.section)
 const workspace = useWorkspace()
 const error = ref('')
 const notice = ref('')
@@ -16,10 +18,15 @@ const account = reactive({ username: '', password: '', role: 'viewer', disabled:
 const key = reactive({ name: '', app_id: '', permission: 'deployments:write', expires_in_days: 30 })
 const revealed = ref('')
 const revealOpen = ref(false)
+const keyOpen = ref(false)
 const currentPassword = ref('')
 const password = ref('')
-const queryError = computed(
-  () => access.accounts.error.value || access.keys.error.value || access.audit.error.value,
+const queryError = computed(() =>
+  props.section === 'accounts'
+    ? access.accounts.error.value
+    : props.section === 'keys'
+      ? access.keys.error.value
+      : null,
 )
 watch(revealOpen, (open) => {
   if (!open) revealed.value = ''
@@ -79,6 +86,7 @@ async function createKey() {
   await perform(async () => {
     const result = await access.createKey({ ...key })
     revealed.value = result.token
+    keyOpen.value = false
     revealOpen.value = true
     key.name = ''
   }, 'API key created.')
@@ -103,9 +111,7 @@ async function changePassword() {
     data-testid="access-management"
     class="space-y-6"
     :aria-busy="
-      access.accounts.asyncStatus.value === 'loading' ||
-      access.keys.asyncStatus.value === 'loading' ||
-      access.audit.asyncStatus.value === 'loading'
+      access.accounts.asyncStatus.value === 'loading' || access.keys.asyncStatus.value === 'loading'
     "
   >
     <p
@@ -123,7 +129,11 @@ async function changePassword() {
       {{ notice }}
     </p>
     <template v-if="access.admin.value">
-      <Card>
+      <Card
+        v-if="section === 'accounts'"
+        id="accounts"
+        class="scroll-mt-6"
+      >
         <CardHeader>
           <CardTitle>Accounts</CardTitle>
           <CardDescription>
@@ -133,7 +143,7 @@ async function changePassword() {
         </CardHeader>
         <CardContent class="space-y-4">
           <Button @click="openAccount(null)">New account</Button>
-          <div class="overflow-x-auto">
+          <div>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -168,7 +178,11 @@ async function changePassword() {
           </div>
         </CardContent>
       </Card>
-      <Card>
+      <Card
+        v-if="section === 'keys'"
+        id="api-keys"
+        class="scroll-mt-6"
+      >
         <CardHeader>
           <CardTitle>API keys</CardTitle>
           <CardDescription>
@@ -177,71 +191,98 @@ async function changePassword() {
           </CardDescription>
         </CardHeader>
         <CardContent class="space-y-5">
-          <form
-            class="grid gap-4 sm:grid-cols-2"
-            @submit.prevent="createKey"
-          >
-            <label class="space-y-2 text-sm">
-              Key name
-              <Input
-                v-model="key.name"
-                required
-                maxlength="128"
-                placeholder="GitHub Actions"
-              />
-            </label>
-            <label class="space-y-2 text-sm">
-              Application
-              <select
-                v-model="key.app_id"
-                aria-label="Application"
-                required
-                class="block w-full rounded-md border bg-background p-2"
-              >
-                <option
-                  disabled
-                  value=""
+          <Button @click="keyOpen = true">New API key</Button>
+          <Dialog v-model:open="keyOpen">
+            <DialogContent class="max-h-[90svh] overflow-hidden">
+              <ScrollArea class="max-h-[80svh] w-full pr-3">
+                <DialogHeader>
+                  <DialogTitle>New API key</DialogTitle>
+                  <DialogDescription>
+                    Choose an application and the access this key needs.
+                  </DialogDescription>
+                </DialogHeader>
+                <form
+                  class="space-y-4"
+                  @submit.prevent="createKey"
                 >
-                  Select an application
-                </option>
-                <option
-                  v-for="app in workspace.applications.value"
-                  :key="app.id"
-                  :value="app.id"
+                  <label class="block space-y-2 text-sm">
+                    Key name
+                    <Input
+                      v-model="key.name"
+                      required
+                      maxlength="128"
+                      placeholder="GitHub Actions"
+                    />
+                  </label>
+                  <label class="block space-y-2 text-sm">
+                    Application
+                    <Select
+                      :model-value="key.app_id"
+                      @update:model-value="(value) => (key.app_id = String(value ?? ''))"
+                    >
+                      <SelectTrigger
+                        aria-label="Application"
+                        class="w-full"
+                      >
+                        <SelectValue placeholder="Select an application" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem
+                          v-for="app in workspace.applications.value"
+                          :key="app.id"
+                          :value="app.id"
+                        >
+                          {{ app.display_name }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </label>
+                  <label class="block space-y-2 text-sm">
+                    Permission
+                    <Select
+                      :model-value="key.permission"
+                      @update:model-value="(value) => (key.permission = String(value ?? ''))"
+                    >
+                      <SelectTrigger
+                        aria-label="Permission"
+                        class="w-full"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="deployments:write">Report deployments</SelectItem>
+                        <SelectItem value="publish">Publish app releases and patches</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </label>
+                  <label class="block space-y-2 text-sm">
+                    Expires in days
+                    <Input
+                      v-model.number="key.expires_in_days"
+                      type="number"
+                      min="1"
+                      max="365"
+                      required
+                    />
+                  </label>
+                  <Button
+                    type="submit"
+                    :disabled="busy || !key.app_id"
+                  >
+                    Create API key
+                  </Button>
+                </form>
+                <p
+                  v-if="error"
+                  role="alert"
+                  class="text-sm text-destructive"
                 >
-                  {{ app.display_name }}
-                </option>
-              </select>
-            </label>
-            <label class="space-y-2 text-sm">
-              Permission
-              <select
-                v-model="key.permission"
-                aria-label="Permission"
-                class="block w-full rounded-md border bg-background p-2"
-              >
-                <option value="deployments:write">Report deployments</option>
-                <option value="publish">Publish app releases and patches</option>
-              </select>
-            </label>
-            <label class="space-y-2 text-sm">
-              Expires in days
-              <Input
-                v-model.number="key.expires_in_days"
-                type="number"
-                min="1"
-                max="365"
-                required
-              />
-            </label>
-            <Button
-              type="submit"
-              :disabled="busy || !key.app_id"
-            >
-              Create API key
-            </Button>
-          </form>
-          <div class="overflow-x-auto">
+                  {{ error }}
+                </p>
+              </ScrollArea>
+            </DialogContent>
+          </Dialog>
+          <div>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -295,60 +336,12 @@ async function changePassword() {
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Audit history</CardTitle>
-          <CardDescription>
-            Successful management changes with the authenticated account or API key responsible.
-          </CardDescription>
-        </CardHeader>
-        <CardContent class="space-y-4">
-          <div class="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>When</TableHead>
-                  <TableHead>Who</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Resource</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow
-                  v-for="event in access.audit.data.value?.events"
-                  :key="event.id"
-                >
-                  <TableCell>{{ formatDate(event.occurred_at) }}</TableCell>
-                  <TableCell>
-                    {{ event.actor_name }}
-                    <span class="block text-xs text-muted-foreground">{{ event.actor_kind }}</span>
-                  </TableCell>
-                  <TableCell>{{ event.action }}</TableCell>
-                  <TableCell class="max-w-xs break-all text-xs">{{ event.resource }}</TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </div>
-          <div class="flex gap-2">
-            <Button
-              v-if="access.before.value"
-              variant="outline"
-              @click="access.before.value = null"
-            >
-              Latest
-            </Button>
-            <Button
-              v-if="access.audit.data.value?.events.length === 100"
-              variant="outline"
-              @click="access.before.value = access.audit.data.value.events.at(-1)?.id ?? null"
-            >
-              Older events
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </template>
-    <Card>
+    <Card
+      v-if="section === 'password'"
+      id="password"
+      class="scroll-mt-6"
+    >
       <CardHeader>
         <CardTitle>Change password</CardTitle>
         <CardDescription>
@@ -357,10 +350,10 @@ async function changePassword() {
       </CardHeader>
       <CardContent>
         <form
-          class="grid gap-4 sm:grid-cols-2"
+          class="max-w-5xl space-y-4"
           @submit.prevent="changePassword"
         >
-          <label class="space-y-2 text-sm">
+          <label class="block space-y-2 text-sm">
             Current password
             <Input
               v-model="currentPassword"
@@ -370,7 +363,7 @@ async function changePassword() {
               maxlength="1024"
             />
           </label>
-          <label class="space-y-2 text-sm">
+          <label class="block space-y-2 text-sm">
             New password
             <Input
               v-model="password"
@@ -384,6 +377,7 @@ async function changePassword() {
           <Button
             type="submit"
             :disabled="busy"
+            class="h-auto min-h-9 max-w-full whitespace-normal py-2"
           >
             Change password and sign out
           </Button>
@@ -438,15 +432,22 @@ async function changePassword() {
           </label>
           <label class="block space-y-2 text-sm">
             Role
-            <select
-              v-model="account.role"
-              aria-label="Role"
-              class="w-full rounded-md border bg-background p-2"
+            <Select
+              :model-value="account.role"
+              @update:model-value="(value) => (account.role = String(value ?? 'viewer'))"
             >
-              <option value="viewer">Viewer</option>
-              <option value="publisher">Publisher</option>
-              <option value="admin">Admin</option>
-            </select>
+              <SelectTrigger
+                aria-label="Role"
+                class="w-full"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="viewer">Viewer</SelectItem>
+                <SelectItem value="publisher">Publisher</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+              </SelectContent>
+            </Select>
           </label>
           <label
             v-if="editing"
