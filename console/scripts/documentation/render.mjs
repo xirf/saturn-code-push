@@ -30,17 +30,23 @@ export function renderDocumentation(markdown, source, routes) {
   const fence = parser.renderer.rules.fence
   parser.renderer.rules.fence = (items, index, options, environment, renderer) => {
     const code = fence(items, index, options, environment, renderer)
+    const language = items[index].info.trim().split(/\s+/, 1)[0] || 'Code'
     return `
-      <div class="relative my-5 rounded-lg border bg-muted/30">
+      <div data-code-block class="my-5 overflow-hidden rounded-lg border bg-muted/30">
+        <div class="flex min-h-11 items-center justify-between gap-3 border-b bg-muted/50 px-3">
+          <span class="min-w-0 truncate font-mono text-xs text-muted-foreground">${escapeHtml(language)}</span>
         <button
           type="button"
           data-copy-code
           aria-label="Copy code"
-          class="absolute top-3 right-3 rounded-md border bg-background px-2 py-1 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          class="shrink-0 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Copy
         </button>
+        </div>
+        <div class="overflow-auto p-4 font-mono text-xs leading-relaxed [&_pre]:m-0 [&_pre]:overflow-visible [&_pre]:bg-transparent [&_pre]:p-0 [&_code]:font-mono [&_code]:text-xs">
         ${code}
+        </div>
       </div>
     `
   }
@@ -56,6 +62,20 @@ export function renderDocumentation(markdown, source, routes) {
       .map((token) => token.content)
       .join(' '),
   }
+}
+
+function escapeHtml(value) {
+  return value.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      })[character],
+  )
 }
 
 export function resolveDocumentationLink(href, source, routes) {

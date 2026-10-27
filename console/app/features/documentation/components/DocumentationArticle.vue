@@ -8,7 +8,7 @@ async function interact(event: MouseEvent) {
   if (!(event.target instanceof Element)) return
   const button = event.target.closest<HTMLButtonElement>('[data-copy-code]')
   if (button) {
-    const code = button.parentElement?.querySelector('code')?.textContent
+    const code = button.closest('[data-code-block]')?.querySelector('code')?.textContent
     if (!code) return
     try {
       await navigator.clipboard.writeText(code)
@@ -42,7 +42,7 @@ async function interact(event: MouseEvent) {
       <!-- Only build-generated Markdown HTML is accepted. Raw source HTML is disabled. -->
       <!-- eslint-disable vue/no-v-html -->
       <article
-        class="prose prose-sm prose-neutral max-w-none min-w-0 dark:prose-invert prose-headings:scroll-mt-24 prose-headings:font-heading prose-h1:text-3xl prose-h1:tracking-tight prose-a:break-words prose-a:font-normal prose-a:underline-offset-4 prose-pre:mt-0 prose-pre:mb-0 prose-pre:rounded-lg prose-pre:bg-transparent prose-pre:pt-12 prose-code:before:content-none prose-code:after:content-none"
+        class="prose prose-sm prose-neutral max-w-none min-w-0 dark:prose-invert prose-headings:scroll-mt-24 prose-headings:font-heading prose-h1:text-3xl prose-h1:tracking-tight prose-a:break-words prose-a:font-normal prose-a:underline-offset-4 prose-pre:mt-0 prose-pre:mb-0 prose-pre:rounded-lg prose-pre:bg-transparent prose-code:before:content-none prose-code:after:content-none"
         :class="page.slug === 'license' && '[&_pre]:whitespace-pre-wrap [&_code]:break-words'"
         aria-label="Documentation content"
         @click="interact"
