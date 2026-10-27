@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Search, ShieldCheck } from '@lucide/vue'
+import { InputGroup, InputGroupAddon, InputGroupInput } from '~/components/ui/input-group'
 import ReleaseTable from '~/features/distribution/components/ReleaseTable.vue'
 import { useWorkspace } from '~/features/workspace/composables/useWorkspace'
 
@@ -32,15 +33,15 @@ const releases = computed(() =>
             Published by your CLI and scoped to the selected application.
           </CardDescription>
         </div>
-        <div class="relative">
-          <Search class="absolute top-2.5 left-3 size-4 text-muted-foreground" />
-          <Input
+        <InputGroup class="w-full max-w-sm">
+          <InputGroupInput
             v-model="search"
+            class="pl-9"
             aria-label="Search releases"
             placeholder="Search releases…"
-            class="pl-9"
           />
-        </div>
+          <InputGroupAddon><Search aria-hidden="true" /></InputGroupAddon>
+        </InputGroup>
       </div>
     </CardHeader>
     <CardContent class="px-0"><ReleaseTable :releases="releases" /></CardContent>

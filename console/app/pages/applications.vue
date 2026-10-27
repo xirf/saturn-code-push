@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ArrowUpRight, Copy, Search } from '@lucide/vue'
 import { toast } from 'vue-sonner'
+import { InputGroup, InputGroupAddon, InputGroupInput } from '~/components/ui/input-group'
 import EmptyState from '~/components/shared/EmptyState.vue'
 import { useWorkspace } from '~/features/workspace/composables/useWorkspace'
 import { usePreferencesStore } from '~/stores/preferences'
@@ -36,24 +37,36 @@ async function copy(id: string) {
 </script>
 
 <template>
-  <div class="space-y-6">
-    <div class="relative max-w-sm">
-      <Search class="absolute top-2.5 left-3 size-4 text-muted-foreground" />
-      <Input
-        v-model="search"
-        aria-label="Search applications"
-        placeholder="Search applications…"
-        class="pl-9"
-      />
-    </div>
-    <Card
-      v-if="applications.length"
-      class="overflow-hidden py-0"
-    >
-      <Table>
+  <Card>
+    <CardHeader>
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <CardTitle>
+            All applications
+            <span class="ml-2 text-muted-foreground">
+              {{ workspace.applications.value.length }}
+            </span>
+          </CardTitle>
+          <CardDescription class="mt-1">
+            Select an application to open its release history.
+          </CardDescription>
+        </div>
+        <InputGroup class="w-full max-w-sm">
+          <InputGroupInput
+            v-model="search"
+            class="pl-9"
+            aria-label="Search applications"
+            placeholder="Search applications…"
+          />
+          <InputGroupAddon><Search aria-hidden="true" /></InputGroupAddon>
+        </InputGroup>
+      </div>
+    </CardHeader>
+    <CardContent class="px-0">
+      <Table v-if="applications.length">
         <TableHeader>
           <TableRow>
-            <TableHead class="pl-5">Application</TableHead>
+            <TableHead>Application</TableHead>
             <TableHead>Application ID</TableHead>
             <TableHead>Releases</TableHead>
             <TableHead>Created</TableHead>
@@ -65,7 +78,7 @@ async function copy(id: string) {
             v-for="app in applications"
             :key="app.id"
           >
-            <TableCell class="py-4 pl-5 font-medium">
+            <TableCell class="font-medium">
               <button
                 class="hover:underline underline-offset-4"
                 @click="openApplication(app.id)"
@@ -93,7 +106,7 @@ async function copy(id: string) {
               }}
             </TableCell>
             <TableCell class="text-muted-foreground">{{ formatDate(app.created_at) }}</TableCell>
-            <TableCell class="pr-5 text-right">
+            <TableCell class="text-right">
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -106,12 +119,15 @@ async function copy(id: string) {
           </TableRow>
         </TableBody>
       </Table>
-    </Card>
-    <Card v-else>
       <EmptyState
+        v-else
+        class="px-5 py-8"
         :title="search ? 'No matching applications' : 'No applications yet'"
         description="Create an application to start a dedicated release pipeline."
       />
-    </Card>
-  </div>
+    </CardContent>
+    <CardFooter class="text-xs text-muted-foreground">
+      Application IDs are used by your CLI and deployment keys.
+    </CardFooter>
+  </Card>
 </template>

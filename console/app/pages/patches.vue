@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Search } from '@lucide/vue'
+import { InputGroup, InputGroupAddon, InputGroupInput } from '~/components/ui/input-group'
 import PatchTable from '~/features/distribution/components/PatchTable.vue'
 import { useWorkspace } from '~/features/workspace/composables/useWorkspace'
 
@@ -32,15 +33,15 @@ const patches = computed(() =>
           </CardTitle>
           <CardDescription class="mt-1">Promote, roll back, or restore a patch.</CardDescription>
         </div>
-        <div class="relative">
-          <Search class="absolute top-2.5 left-3 size-4 text-muted-foreground" />
-          <Input
+        <InputGroup class="w-full max-w-sm">
+          <InputGroupInput
             v-model="search"
+            class="pl-9"
             aria-label="Search patches"
             placeholder="Search patches…"
-            class="pl-9"
           />
-        </div>
+          <InputGroupAddon><Search aria-hidden="true" /></InputGroupAddon>
+        </InputGroup>
       </div>
     </CardHeader>
     <CardContent class="px-0"><PatchTable :patches="patches" /></CardContent>
