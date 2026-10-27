@@ -11,7 +11,7 @@ export const eventSchema = z.object({
       client_id: z.string().optional(),
       platform: z.string().optional(),
       arch: z.string().optional(),
-      message: z.string().optional(),
+      message: z.string().nullish(),
     })
     .passthrough(),
 })
