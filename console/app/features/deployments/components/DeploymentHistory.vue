@@ -29,6 +29,14 @@ const form = reactive({
 })
 const statuses = ['pending', 'running', 'failed', 'uploaded', 'in_review', 'published']
 const current = computed(() => items.value.filter((item) => item.release_id === props.release.id))
+const baselineSelection = computed({
+  get: () => baseline.value || 'previous',
+  set: (value: string) => (baseline.value = value === 'previous' ? '' : value),
+})
+const patchSelection = computed({
+  get: () => form.patch_id || 'release-baseline',
+  set: (value: string) => (form.patch_id = value === 'release-baseline' ? '' : value),
+})
 const endpoint = computed(
   () => `/api/v1/apps/${encodeURIComponent(props.release.app_id)}/deployments`,
 )
@@ -93,7 +101,7 @@ async function save() {
     busy.value = false
   }
 }
-async function update(item: Deployment, event: Event) {
+async function update(item: Deployment, status: string) {
   busy.value = true
   reading++
   error.value = ''
@@ -101,7 +109,7 @@ async function update(item: Deployment, event: Event) {
   try {
     const result = (await request(`${endpoint.value}/${item.id}`, {
       method: 'PATCH',
-      body: { status: (event.target as HTMLSelectElement).value },
+      body: { status },
     })) as Deployment[]
     if (token === generation) items.value = result
   } catch (cause) {
@@ -138,21 +146,28 @@ function compare(item: Deployment) {
       </p>
       <label class="block space-y-2">
         <span>Compare against</span>
-        <select
-          v-model="baseline"
-          class="w-full rounded-md border bg-background p-2"
-        >
-          <option value="">Previous published release or patch for this target</option>
-          <option
-            v-for="item in items"
-            :key="item.id"
-            :value="String(item.id)"
+        <Select v-model="baselineSelection">
+          <SelectTrigger
+            aria-label="Compare against"
+            class="w-full"
           >
-            {{ item.patch_id == null ? 'Release' : `Patch ${item.patch_id}` }} ·
-            {{ item.destination }} · {{ item.source_ref }} · {{ item.commit.slice(0, 7) }} ·
-            {{ item.status }}
-          </option>
-        </select>
+            <SelectValue placeholder="Previous published release or patch for this target" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="previous">
+              Previous published release or patch for this target
+            </SelectItem>
+            <SelectItem
+              v-for="item in items"
+              :key="item.id"
+              :value="String(item.id)"
+            >
+              {{ item.patch_id == null ? 'Release' : `Patch ${item.patch_id}` }} ·
+              {{ item.destination }} · {{ item.source_ref }} · {{ item.commit.slice(0, 7) }} ·
+              {{ item.status }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
       </label>
       <p
         v-if="!current.length"
@@ -206,21 +221,27 @@ function compare(item: Deployment) {
         </p>
         <label class="flex items-center gap-2 text-sm">
           Reported status
-          <select
-            aria-label="Reported deployment status"
-            :value="item.status"
+          <Select
+            :model-value="item.status"
             :disabled="busy || !canPublish"
-            class="rounded-md border bg-background p-2"
-            @change="update(item, $event)"
+            @update:model-value="(value) => update(item, String(value ?? item.status))"
           >
-            <option
-              v-for="status in statuses"
-              :key="status"
-              :value="status"
+            <SelectTrigger
+              aria-label="Reported deployment status"
+              class="w-auto min-w-36"
             >
-              {{ status.replaceAll('_', ' ') }}
-            </option>
-          </select>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem
+                v-for="status in statuses"
+                :key="status"
+                :value="status"
+              >
+                {{ status.replaceAll('_', ' ') }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </label>
         <p class="text-xs text-muted-foreground">
           Reported by {{ item.reported_by ?? 'Unknown (imported)' }} · Last updated by
@@ -276,20 +297,24 @@ function compare(item: Deployment) {
         >
           <label class="space-y-1 text-sm">
             Deployment target
-            <select
-              v-model="form.patch_id"
-              aria-label="Deployment target"
-              class="block w-full rounded-md border bg-background p-2"
-            >
-              <option value="">Release baseline</option>
-              <option
-                v-for="patch in props.patches ?? []"
-                :key="patch.id"
-                :value="String(patch.id)"
+            <Select v-model="patchSelection">
+              <SelectTrigger
+                aria-label="Deployment target"
+                class="w-full"
               >
-                Patch #{{ patch.number }}
-              </option>
-            </select>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="release-baseline">Release baseline</SelectItem>
+                <SelectItem
+                  v-for="patch in props.patches ?? []"
+                  :key="patch.id"
+                  :value="String(patch.id)"
+                >
+                  Patch #{{ patch.number }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </label>
           <label
             v-for="field in [
@@ -334,33 +359,43 @@ function compare(item: Deployment) {
           </p>
           <label class="space-y-1 text-sm">
             GitHub source type
-            <select
-              v-model="form.source_kind"
-              class="block w-full rounded-md border bg-background p-2"
-            >
-              <option
-                v-for="kind in ['commit', 'tag', 'release']"
-                :key="kind"
-                :value="kind"
+            <Select v-model="form.source_kind">
+              <SelectTrigger
+                aria-label="GitHub source type"
+                class="w-full"
               >
-                {{ kind }}
-              </option>
-            </select>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem
+                  v-for="kind in ['commit', 'tag', 'release']"
+                  :key="kind"
+                  :value="kind"
+                >
+                  {{ kind }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </label>
           <label class="space-y-1 text-sm">
             Reported status
-            <select
-              v-model="form.status"
-              class="block w-full rounded-md border bg-background p-2"
-            >
-              <option
-                v-for="status in statuses"
-                :key="status"
-                :value="status"
+            <Select v-model="form.status">
+              <SelectTrigger
+                aria-label="Reported status"
+                class="w-full"
               >
-                {{ status.replaceAll('_', ' ') }}
-              </option>
-            </select>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem
+                  v-for="status in statuses"
+                  :key="status"
+                  :value="status"
+                >
+                  {{ status.replaceAll('_', ' ') }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </label>
           <datalist id="deployment-destinations">
             <option value="app-store/testflight" />
