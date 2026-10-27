@@ -22,6 +22,7 @@ pub(crate) fn router(runtime: Runtime) -> Router {
         .merge(distribution::http::routes(&runtime))
         .merge(artifacts::http::routes(&runtime))
         .merge(identity::http::routes())
+        .merge(crate::modules::github::routes(&runtime))
         .merge(identity::management::routes(&runtime))
         .merge(telemetry::http::routes(&runtime))
         .merge(crate::modules::deployments::routes(&runtime))

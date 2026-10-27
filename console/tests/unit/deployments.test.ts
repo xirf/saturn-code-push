@@ -48,3 +48,21 @@ describe('deployment comparisons', () => {
     expect(comparisonUrl(record(1, { repository: 'other/repo' }), current)).toBeUndefined()
   })
 })
+
+describe('release and patch baselines', () => {
+  it('never uses a patch as the default baseline for a store release', () => {
+    const release = record(1)
+    expect(previousPublished([record(2, { patch_id: 10 }), release], record(3))).toEqual(release)
+  })
+  it('compares a patch within its parent release, falling back to its release baseline', () => {
+    const base = record(1)
+    const patch = record(2, { patch_id: 10 })
+    const current = record(5, { patch_id: 11 })
+    expect(
+      previousPublished([record(4, { release_id: 2, patch_id: 12 }), patch, base], current),
+    ).toEqual(patch)
+    expect(previousPublished([record(4, { release_id: 2, patch_id: 12 }), base], current)).toEqual(
+      base,
+    )
+  })
+})

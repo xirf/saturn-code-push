@@ -288,3 +288,13 @@ pub(super) fn set_rollback(
         modules::distribution::api::rollback_for_test(connection, app, release, patch, value)
     })
 }
+
+// Resolve the recorded location rather than assuming the historical flat layout.
+pub(super) async fn binary_path(s: &Service, id: i64) -> std::path::PathBuf {
+    let location = s
+        .objects
+        .location(&s.database, crate::platform::objects::Kind::Binary, id)
+        .await
+        .unwrap();
+    s.objects.local_path(&location)
+}

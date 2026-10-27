@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import StorageSettings from '~/features/storage/components/StorageSettings.vue'
+import GitHubIntegration from '~/features/integrations/components/GitHubIntegration.vue'
 import AccessManagement from '~/features/access/components/AccessManagement.vue'
 import { Copy, ShieldCheck, LogOut, Terminal } from '@lucide/vue'
 import { toast } from 'vue-sonner'
@@ -120,6 +122,8 @@ async function logout() {
         </CardFooter>
       </Card>
     </div>
+    <StorageSettings />
+    <GitHubIntegration />
     <AccessManagement />
   </div>
 </template>

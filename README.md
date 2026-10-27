@@ -39,6 +39,7 @@ The same guides are published in the console's **Documentation** section and are
 - [Flutter package integration](packages/saturn_assets/README.md)
 - [Accounts, API keys, and PostgreSQL migration](docs/accounts-and-postgresql.md)
 - [GitHub CI/CD](docs/github-deployments.md)
+- [Artifact storage](docs/artifact-storage.md)
 - [Server deployment and configuration](server/README.md)
 - [Server architecture](server/ARCHITECTURE.md)
 - [Console development](console/README.md)

@@ -127,7 +127,7 @@ async fn concurrent_uploads_publish_one_immutable_object() {
             .count(),
         1
     );
-    let bytes = std::fs::read(service.objects.binary(artifact.id)).unwrap();
+    let bytes = std::fs::read(binary_path(&service, artifact.id).await).unwrap();
     assert_eq!(
         bytes,
         if first == StatusCode::OK {
@@ -148,13 +148,22 @@ async fn pending_upload_recovers_an_object_left_before_commit() {
     let (_directory, service) = service();
     fixture(&service);
     let artifact = artifact(&service, None, &hex::encode(Sha256::digest(b"abc")), 3);
-    std::fs::write(service.objects.binary(artifact.id), b"orphan").unwrap();
+    let location = service.objects.destination(
+        crate::platform::objects::Kind::Binary,
+        &artifact.app_id,
+        artifact.release_id,
+        artifact.patch_id,
+        artifact.id,
+    );
+    let orphan = service.objects.local_path(&location);
+    std::fs::create_dir_all(orphan.parent().unwrap()).unwrap();
+    std::fs::write(orphan, b"orphan").unwrap();
     assert_eq!(
         upload_bytes(&service, &artifact, b"abc").await,
         StatusCode::OK
     );
     assert_eq!(
-        std::fs::read(service.objects.binary(artifact.id)).unwrap(),
+        std::fs::read(binary_path(&service, artifact.id).await).unwrap(),
         b"abc"
     );
 }
@@ -184,7 +193,14 @@ async fn database_commit_failure_removes_the_published_file() {
         upload_bytes(&service, &artifact, b"abc").await,
         StatusCode::INTERNAL_SERVER_ERROR
     );
-    assert!(!service.objects.binary(artifact.id).exists());
+    let location = service.objects.destination(
+        crate::platform::objects::Kind::Binary,
+        &artifact.app_id,
+        artifact.release_id,
+        artifact.patch_id,
+        artifact.id,
+    );
+    assert!(!service.objects.local_path(&location).exists());
     service
         .database
         .transaction(|connection| {

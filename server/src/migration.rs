@@ -7,6 +7,8 @@ use crate::platform::{
 const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/001_postgresql.sql"),
     include_str!("../migrations/002_accounts.sql"),
+    include_str!("../migrations/003_github_sync.sql"),
+    include_str!("../migrations/004_object_storage.sql"),
 ];
 
 pub(crate) fn run(c: &mut Connection<'_>) -> Result<()> {

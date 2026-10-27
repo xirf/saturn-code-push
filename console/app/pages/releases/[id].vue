@@ -50,6 +50,7 @@ watch(
       <DeploymentHistory
         :key="release.id"
         :release="release"
+        :patches="patches"
       />
       <Card>
         <CardHeader>

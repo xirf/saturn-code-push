@@ -16,6 +16,7 @@ pub fn application(config: Config) -> std::result::Result<axum::Router, ApiError
         config.admin_token,
         &config.database_url,
     )?;
+    runtime.objects.configure(config.s3, config.use_s3);
     runtime.console_dir = config.console_dir;
     if let Some(credentials) = config.credentials {
         runtime
@@ -34,6 +35,10 @@ pub fn application(config: Config) -> std::result::Result<axum::Router, ApiError
             "Open {}/setup to create the first administrator. Set SETUP_TOKEN in deployment settings to enable setup.",
             runtime.base_url
         );
+    }
+    runtime.github = config.github;
+    if let Some(app) = &runtime.github {
+        modules::github::start(runtime.database.clone(), app)?;
     }
     Ok(http::router(runtime))
 }

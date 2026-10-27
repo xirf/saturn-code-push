@@ -38,3 +38,7 @@ mod deployments;
 mod accounts;
 
 mod setup;
+
+mod github;
+
+mod object_storage;

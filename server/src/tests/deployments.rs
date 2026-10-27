@@ -67,3 +67,56 @@ async fn deployment_reports_are_authenticated_persistent_and_app_scoped() {
         "in_review"
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deployment_target_is_explicit_and_patch_ownership_is_immutable() {
+    let (_dir, s) = service();
+    fixture(&s);
+    let patch_id = patch(&s, 1);
+    let path = "/api/v1/apps/app/deployments";
+    let report = json!({"release_id":2,"patch_id":patch_id,"key":"patch-run","repository":"owner/repo","commit":"a".repeat(40),"source_kind":"commit","source_ref":"main","destination":"ota/stable","status":"running","workflow_run":42});
+    let (status, result) = call(&s, "POST", path, report.clone(), true).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(result[0]["patch_id"], patch_id);
+    let mut invalid_attempt = report.clone();
+    invalid_attempt["workflow_attempt"] = json!(0);
+    assert_eq!(
+        call(&s, "POST", path, invalid_attempt, true).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let mut missing_run = report.clone();
+    missing_run["workflow_attempt"] = json!(1);
+    missing_run["workflow_run"] = Value::Null;
+    assert_eq!(
+        call(&s, "POST", path, missing_run, true).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let mut changed = report.clone();
+    changed["patch_id"] = Value::Null;
+    assert_eq!(
+        call(&s, "POST", path, changed, true).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let mut invalid = report.clone();
+    invalid["patch_id"] = json!(999);
+    assert_eq!(
+        call(&s, "POST", path, invalid, true).await.0,
+        StatusCode::NOT_FOUND
+    );
+    s.write(|d| {
+        let mut release = d.releases[0].clone();
+        release.id = d.next();
+        release.version = "2.0.0+2".into();
+        d.releases.push(release);
+        Ok(())
+    })
+    .unwrap();
+    let other_release = s.read(|d| Ok(d.releases.last().unwrap().id)).unwrap();
+    let mut wrong = report;
+    wrong["release_id"] = json!(other_release);
+    wrong["key"] = json!("wrong-parent");
+    assert_eq!(
+        call(&s, "POST", path, wrong, true).await.0,
+        StatusCode::BAD_REQUEST
+    );
+}

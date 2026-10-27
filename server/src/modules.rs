@@ -5,3 +5,5 @@ pub(crate) mod identity;
 pub(crate) mod telemetry;
 
 pub(crate) mod deployments;
+
+pub(crate) mod github;

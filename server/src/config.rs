@@ -6,11 +6,14 @@ use axum::http::Uri;
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
 pub struct Config {
+    pub(crate) s3: Option<Arc<crate::platform::objects::S3>>,
+    pub(crate) use_s3: bool,
     pub(crate) database_url: String,
     pub(crate) data_dir: PathBuf,
     pub(crate) base_url: String,
     pub(crate) admin_token: String,
     pub(crate) console_dir: PathBuf,
+    pub(crate) github: Option<Arc<crate::modules::github::App>>,
     pub(crate) setup_token: Option<String>,
     pub(crate) credentials: Option<Arc<Credentials>>,
     pub bind_address: SocketAddr,
@@ -50,7 +53,20 @@ impl Config {
             .unwrap_or_else(|_| "0.0.0.0:3000".into())
             .parse()
             .map_err(|_| bad("BIND_ADDRESS must be an IP address and port"))?;
+        let s3 = crate::platform::objects::S3::from_env()?;
+        let use_s3 = match std::env::var("STORAGE_BACKEND")
+            .as_deref()
+            .unwrap_or("local")
+        {
+            "local" => false,
+            "s3" if s3.is_some() => true,
+            "s3" => return Err(bad("STORAGE_S3_BUCKET is required for S3 storage")),
+            _ => return Err(bad("STORAGE_BACKEND must be local or s3")),
+        };
         Ok(Self {
+            s3,
+            use_s3,
+            github: crate::modules::github::App::from_env()?,
             setup_token,
             database_url: std::env::var("DATABASE_URL")
                 .map_err(|_| bad("DATABASE_URL is required"))?,

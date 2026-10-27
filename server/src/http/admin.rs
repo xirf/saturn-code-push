@@ -9,7 +9,9 @@ use serde_json::{Value, json};
 pub(super) fn routes(runtime: &Runtime) -> axum::Router<Runtime> {
     super::policy::management(
         runtime,
-        axum::Router::new().route("/admin/state", axum::routing::get(snapshot)),
+        axum::Router::new()
+            .route("/admin/state", axum::routing::get(snapshot))
+            .route("/admin/storage", axum::routing::get(storage)),
     )
 }
 
@@ -66,4 +68,8 @@ pub(super) async fn snapshot(State(runtime): State<Runtime>) -> Result<Json<Valu
         })
         .await
         .map(Json)
+}
+
+async fn storage(State(runtime): State<Runtime>) -> Json<Value> {
+    Json(runtime.objects.settings())
 }

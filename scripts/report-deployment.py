@@ -11,11 +11,14 @@ import urllib.request
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--release-id', required=True, type=int)
+    parser.add_argument('--patch-id', type=int, help='Existing Saturn patch ID; omit for a release baseline')
     parser.add_argument('--destination', required=True)
     parser.add_argument('--status', required=True, choices=['pending', 'running', 'failed', 'uploaded', 'in_review', 'published'])
     parser.add_argument('--build-number', default='')
     parser.add_argument('--source-kind', choices=['commit', 'tag', 'release'])
     args = parser.parse_args()
+    if args.release_id < 1 or (args.patch_id is not None and args.patch_id < 1):
+        parser.error('Release and patch IDs must be positive')
     required = ['SATURN_URL', 'SATURN_TOKEN', 'SATURN_APP_ID', 'GITHUB_REPOSITORY', 'GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_REF_NAME']
     missing = [name for name in required if not os.environ.get(name)]
     if missing:
@@ -26,12 +29,14 @@ def main():
         parser.error('SATURN_URL must be an HTTPS URL without credentials, query or fragment')
     payload = {
         'release_id': args.release_id,
-        'key': f"{os.environ['GITHUB_REPOSITORY']}:{os.environ['GITHUB_RUN_ID']}:{os.environ.get('GITHUB_RUN_ATTEMPT', '1')}:{args.destination}",
+        'patch_id': args.patch_id,
+        'key': f"{os.environ['GITHUB_REPOSITORY']}:{os.environ['GITHUB_RUN_ID']}:{os.environ.get('GITHUB_RUN_ATTEMPT', '1')}:{args.destination}:{'patch-' + str(args.patch_id) if args.patch_id else 'release-' + str(args.release_id)}",
         'repository': os.environ['GITHUB_REPOSITORY'],
         'commit': os.environ['GITHUB_SHA'],
         'source_kind': args.source_kind or ('release' if os.environ.get('GITHUB_EVENT_NAME') == 'release' else 'tag' if os.environ.get('GITHUB_REF_TYPE') == 'tag' else 'commit'),
         'source_ref': os.environ['GITHUB_REF_NAME'],
         'workflow_run': int(os.environ['GITHUB_RUN_ID']),
+        'workflow_attempt': int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')),
         'destination': args.destination,
         'status': args.status,
         'build_number': args.build_number,

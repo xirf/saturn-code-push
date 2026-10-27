@@ -1,0 +1,10 @@
+# Optional override for mounting a GitHub App private key in a local Compose deployment.
+services:
+  code-push:
+    environment:
+      GITHUB_APP_PRIVATE_KEY_FILE: /run/secrets/github-app.pem
+    volumes:
+      - type: bind
+        source: ${GITHUB_APP_PRIVATE_KEY_HOST_FILE:?Set the absolute path to the GitHub App private key}
+        target: /run/secrets/github-app.pem
+        read_only: true

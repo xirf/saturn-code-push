@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { useIdentity } from '~/features/identity/composables/useIdentity'
 import type { Release } from '~/features/distribution/types/release'
-import { request, errorMessage } from '~/lib/api/client'
+import type { Patch } from '~/features/distribution/types/patch'
+import { ApiError, request, errorMessage } from '~/lib/api/client'
 import { comparisonUrl, githubUrl, previousPublished, type Deployment } from '../lib/links'
 
-const props = defineProps<{ release: Release }>()
+const props = defineProps<{ release: Release; patches?: Patch[] }>()
 const identity = useIdentity()
 const canPublish = computed(() =>
   ['admin', 'publisher'].includes(identity.session.data.value?.role ?? ''),
@@ -14,6 +15,7 @@ const error = ref('')
 const busy = ref(false)
 const baseline = ref('')
 const form = reactive({
+  patch_id: '',
   key: '',
   repository: '',
   commit: '',
@@ -23,6 +25,7 @@ const form = reactive({
   status: 'uploaded',
   build_number: '',
   workflow_run: '',
+  workflow_attempt: '',
 })
 const statuses = ['pending', 'running', 'failed', 'uploaded', 'in_review', 'published']
 const current = computed(() => items.value.filter((item) => item.release_id === props.release.id))
@@ -30,26 +33,45 @@ const endpoint = computed(
   () => `/api/v1/apps/${encodeURIComponent(props.release.app_id)}/deployments`,
 )
 let generation = 0
+let reading = 0
+async function load() {
+  if (busy.value) return
+  const token = generation
+  const read = ++reading
+  try {
+    const result = (await request(endpoint.value)) as Deployment[]
+    if (token === generation && read === reading) {
+      items.value = result
+      error.value = ''
+    }
+  } catch (cause) {
+    if (token === generation && read === reading) error.value = errorMessage(cause)
+    if (cause instanceof ApiError && cause.status === 401) await identity.expire()
+  }
+}
 watch(
   endpoint,
-  async () => {
-    const token = ++generation
+  () => {
+    generation++
     items.value = []
-    error.value = ''
-    try {
-      const result = (await request(endpoint.value)) as Deployment[]
-      if (token === generation) items.value = result
-    } catch (cause) {
-      if (token === generation) error.value = errorMessage(cause)
-    }
+    void load()
   },
   { immediate: true },
 )
+let timer: ReturnType<typeof setInterval> | undefined
+onMounted(() => {
+  timer = setInterval(() => {
+    if (!document.hidden) void load()
+  }, 15000)
+})
 onBeforeUnmount(() => {
   generation++
+  reading++
+  clearInterval(timer)
 })
 async function save() {
   busy.value = true
+  reading++
   error.value = ''
   const token = generation
   try {
@@ -58,8 +80,10 @@ async function save() {
       body: {
         ...form,
         release_id: props.release.id,
+        patch_id: form.patch_id ? Number(form.patch_id) : null,
         key: form.key || crypto.randomUUID(),
         workflow_run: form.workflow_run ? Number(form.workflow_run) : null,
+        workflow_attempt: form.workflow_attempt ? Number(form.workflow_attempt) : null,
       },
     })) as Deployment[]
     if (token === generation) items.value = result
@@ -71,6 +95,7 @@ async function save() {
 }
 async function update(item: Deployment, event: Event) {
   busy.value = true
+  reading++
   error.value = ''
   const token = generation
   try {
@@ -117,12 +142,13 @@ function compare(item: Deployment) {
           v-model="baseline"
           class="w-full rounded-md border bg-background p-2"
         >
-          <option value="">Previous published deployment to the same destination</option>
+          <option value="">Previous published release or patch for this target</option>
           <option
             v-for="item in items"
             :key="item.id"
             :value="String(item.id)"
           >
+            {{ item.patch_id == null ? 'Release' : `Patch ${item.patch_id}` }} ·
             {{ item.destination }} · {{ item.source_ref }} · {{ item.commit.slice(0, 7) }} ·
             {{ item.status }}
           </option>
@@ -140,9 +166,32 @@ function compare(item: Deployment) {
         class="space-y-2 rounded-md border p-4"
       >
         <p class="font-medium">
-          {{ release.version }}
+          {{ release.version }} ·
+          {{
+            item.patch_id == null
+              ? 'Release baseline'
+              : `Patch #${props.patches?.find((p) => p.id === item.patch_id)?.number ?? item.patch_id}`
+          }}
           <span v-if="item.build_number">· Build {{ item.build_number }}</span>
           · {{ item.destination }}
+        </p>
+        <p class="text-sm">
+          CI:
+          {{
+            item.workflow?.status?.replaceAll('_', ' ') ??
+            (item.workflow_run ? 'Awaiting GitHub sync' : 'No workflow linked')
+          }}
+          <span v-if="item.workflow?.conclusion">
+            · {{ item.workflow.conclusion.replaceAll('_', ' ') }}
+          </span>
+          <span v-if="item.workflow?.run_attempt">· Attempt {{ item.workflow.run_attempt }}</span>
+        </p>
+        <p
+          v-if="item.workflow?.sync_error"
+          role="status"
+          class="text-xs text-destructive"
+        >
+          {{ item.workflow.sync_error }}. Last known CI status may be stale.
         </p>
         <p class="text-sm">
           From {{ item.source_kind }} {{ item.source_ref }} ·
@@ -158,6 +207,7 @@ function compare(item: Deployment) {
         <label class="flex items-center gap-2 text-sm">
           Reported status
           <select
+            aria-label="Reported deployment status"
             :value="item.status"
             :disabled="busy || !canPublish"
             class="rounded-md border bg-background p-2"
@@ -179,7 +229,7 @@ function compare(item: Deployment) {
         <div class="flex gap-4 text-sm">
           <a
             v-if="item.workflow_run"
-            :href="`${githubUrl(item)}/actions/runs/${item.workflow_run}`"
+            :href="`${githubUrl(item)}/actions/runs/${item.workflow_run}${item.workflow_attempt ? `/attempts/${item.workflow_attempt}` : ''}`"
             target="_blank"
             rel="noopener noreferrer"
             class="underline"
@@ -224,6 +274,23 @@ function compare(item: Deployment) {
           class="mt-4 grid gap-3 sm:grid-cols-2"
           @submit.prevent="save"
         >
+          <label class="space-y-1 text-sm">
+            Deployment target
+            <select
+              v-model="form.patch_id"
+              aria-label="Deployment target"
+              class="block w-full rounded-md border bg-background p-2"
+            >
+              <option value="">Release baseline</option>
+              <option
+                v-for="patch in props.patches ?? []"
+                :key="patch.id"
+                :value="String(patch.id)"
+              >
+                Patch #{{ patch.number }}
+              </option>
+            </select>
+          </label>
           <label
             v-for="field in [
               'repository',
@@ -232,6 +299,7 @@ function compare(item: Deployment) {
               'destination',
               'build_number',
               'workflow_run',
+              'workflow_attempt',
               'key',
             ] as const"
             :key="field"
@@ -246,6 +314,7 @@ function compare(item: Deployment) {
                   destination: 'Destination',
                   build_number: 'Build number (optional)',
                   workflow_run: 'Actions run ID (optional)',
+                  workflow_attempt: 'Actions attempt (optional; blank tracks latest)',
                   key: 'Deployment key (optional; reuse to update)',
                 }[field]
               }}
@@ -255,8 +324,8 @@ function compare(item: Deployment) {
               :list="field === 'destination' ? 'deployment-destinations' : undefined"
               :required="['repository', 'commit', 'source_ref', 'destination'].includes(field)"
               :maxlength="field === 'commit' ? 64 : 256"
-              :type="field === 'workflow_run' ? 'number' : 'text'"
-              :min="field === 'workflow_run' ? 1 : undefined"
+              :type="field.startsWith('workflow_') ? 'number' : 'text'"
+              :min="field.startsWith('workflow_') ? 1 : undefined"
             />
           </label>
           <p class="text-xs text-muted-foreground sm:col-span-2">
@@ -264,7 +333,7 @@ function compare(item: Deployment) {
             microsoft-store/production, or a custom track.
           </p>
           <label class="space-y-1 text-sm">
-            Source type
+            GitHub source type
             <select
               v-model="form.source_kind"
               class="block w-full rounded-md border bg-background p-2"

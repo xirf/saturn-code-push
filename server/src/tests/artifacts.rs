@@ -114,10 +114,7 @@ async fn uploads_check_hash_size_and_are_immutable() {
     assert_eq!(upload_bytes(&s, &a, b"abcd").await, StatusCode::BAD_REQUEST);
     assert_eq!(upload_bytes(&s, &a, b"abc").await, StatusCode::OK);
     assert_eq!(upload_bytes(&s, &a, b"abc").await, StatusCode::NOT_FOUND);
-    assert_eq!(
-        std::fs::read(s.objects.directory().join(a.id.to_string())).unwrap(),
-        b"abc"
-    );
+    assert_eq!(std::fs::read(binary_path(&s, a.id).await).unwrap(), b"abc");
     assert!(
         std::fs::read_dir(s.objects.directory()).unwrap().all(|p| !p
             .unwrap()
