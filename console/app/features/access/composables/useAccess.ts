@@ -2,31 +2,22 @@ import { useQuery, useQueryCache } from '@pinia/colada'
 import { useIdentity } from '~/features/identity/composables/useIdentity'
 import { useSessionScope } from '~/features/identity/stores/session-scope'
 import { request } from '~/lib/api/client'
-import { accountsSchema, keysSchema, auditSchema, newKeySchema } from '../types/access'
+import { accountsSchema, keysSchema, newKeySchema } from '../types/access'
 
-export function useAccess() {
+export function useAccess(section: 'accounts' | 'keys' | 'password') {
   const identity = useIdentity()
   const scope = useSessionScope()
   const cache = useQueryCache()
   const admin = computed(() => identity.session.data.value?.role === 'admin')
-  const before = ref<number | null>(null)
   const accounts = useQuery({
     key: () => ['private', scope.generation, 'accounts'],
-    enabled: () => admin.value,
+    enabled: () => admin.value && section === 'accounts',
     query: async ({ signal }) => accountsSchema.parse(await request('/admin/accounts', { signal })),
   })
   const keys = useQuery({
     key: () => ['private', scope.generation, 'api-keys'],
-    enabled: () => admin.value,
+    enabled: () => admin.value && section === 'keys',
     query: async ({ signal }) => keysSchema.parse(await request('/admin/api-keys', { signal })),
-  })
-  const audit = useQuery({
-    key: () => ['private', scope.generation, 'audit', before.value],
-    enabled: () => admin.value,
-    query: async ({ signal }) =>
-      auditSchema.parse(
-        await request(`/admin/audit${before.value ? `?before=${before.value}` : ''}`, { signal }),
-      ),
   })
   async function change(path: string, body: unknown, method: 'POST' | 'PATCH' = 'POST') {
     const generation = scope.generation
@@ -39,8 +30,6 @@ export function useAccess() {
     admin,
     accounts,
     keys,
-    audit,
-    before,
     createAccount: (body: { username: string; password: string; role: string }) =>
       change('/admin/accounts', body),
     updateAccount: (id: string, body: { role: string; disabled: boolean; password?: string }) =>
