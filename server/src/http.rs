@@ -29,6 +29,7 @@ pub(crate) fn router(runtime: Runtime) -> Router {
         .merge(admin::routes(&runtime))
         .merge(compatibility::routes(&runtime))
         .merge(console::routes(&runtime))
+        .fallback(console::fallback)
         .route("/health", get(health))
         .layer(axum::middleware::from_fn(middleware::adapt_dart_json))
         .layer(SetResponseHeaderLayer::overriding(

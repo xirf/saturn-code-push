@@ -49,7 +49,7 @@ async fn every_management_subtree_keeps_authentication_after_nesting() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn console_deep_links_do_not_turn_unknown_api_paths_into_html() {
+async fn spa_fallback_handles_frontend_routes_without_catching_api_or_asset_misses() {
     let (directory, mut service) = service();
     service.console_dir = directory.path().join("console");
     std::fs::create_dir(&service.console_dir).unwrap();
@@ -68,9 +68,18 @@ async fn console_deep_links_do_not_turn_unknown_api_paths_into_html() {
         "/patches",
         "/analytics",
         "/settings",
+        "/settings/management/audit",
+          "/account",
+          "/new/client/route",
     ] {
         let response = router(service.clone())
-            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+              .oneshot(
+                  Request::builder()
+                      .uri(path)
+                      .header("Accept", "text/html")
+                      .body(Body::empty())
+                      .unwrap(),
+              )
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK, "{path}");
@@ -81,6 +90,7 @@ async fn console_deep_links_do_not_turn_unknown_api_paths_into_html() {
         "/auth/missing",
         "/admin/missing",
         "/_nuxt/missing.js",
+          "/missing.js",
     ] {
         let response = router(service.clone())
             .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())

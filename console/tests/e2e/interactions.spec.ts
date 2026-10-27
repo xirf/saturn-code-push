@@ -79,9 +79,9 @@ test('interactive controls show pointer cursors and success toasts stay in the v
     .getByRole('link', { name: 'Settings', exact: true })
   await expect(settings).toHaveCSS('cursor', 'pointer')
   await settings.click()
+  await page.getByRole('link', { name: 'Connection & CLI Copy the API origin' }).click()
   const copy = page.getByRole('button', { name: 'Copy API origin' })
   await expect(copy).toHaveCSS('cursor', 'pointer')
-  await expect(page.getByTestId('access-management')).toHaveAttribute('aria-busy', 'false')
   const heightBefore = await page.evaluate(() => document.documentElement.scrollHeight)
   await copy.click()
 
@@ -101,10 +101,9 @@ test('error toasts are visible on mobile without increasing document height', as
   test.setTimeout(90_000)
   await page.setViewportSize({ width: 390, height: 844 })
   await signIn(page)
-  await page.goto('/settings')
-  await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
+  await page.goto('/settings/server/connection')
+  await expect(page.getByRole('heading', { name: 'Connection & CLI', exact: true })).toBeVisible()
   await page.evaluate(() => Reflect.set(window, '__rejectClipboard', true))
-  await expect(page.getByTestId('access-management')).toHaveAttribute('aria-busy', 'false')
   const heightBefore = await page.evaluate(() => document.documentElement.scrollHeight)
   await page.getByRole('button', { name: 'Copy API origin' }).click()
 
