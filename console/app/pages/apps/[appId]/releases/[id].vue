@@ -4,7 +4,6 @@ import { ArrowLeft } from '@lucide/vue'
 import EmptyState from '~/components/shared/EmptyState.vue'
 import PatchTable from '~/features/distribution/components/PatchTable.vue'
 import { useWorkspace } from '~/features/workspace/composables/useWorkspace'
-import { usePreferencesStore } from '~/stores/preferences'
 import { formatBytes, formatDate } from '~/lib/format'
 
 definePageMeta({
@@ -14,9 +13,8 @@ definePageMeta({
 })
 const route = useRoute()
 const workspace = useWorkspace()
-const preferences = usePreferencesStore()
 const release = computed(() =>
-  workspace.query.data.value?.releases.find((item) => String(item.id) === route.params.id),
+  workspace.releases.value.find((item) => String(item.id) === route.params.id),
 )
 const artifacts = computed(() =>
   workspace.artifacts.value.filter(
@@ -26,27 +24,31 @@ const artifacts = computed(() =>
 const patches = computed(() =>
   workspace.patches.value.filter((item) => item.release_id === release.value?.id),
 )
-watch(
-  release,
-  (value) => {
-    if (value) preferences.selectedAppId = value.app_id
-  },
-  { immediate: true },
-)
 </script>
 
 <template>
   <div class="space-y-6">
     <Button
       variant="ghost"
+      size="sm"
+      class="-ml-2"
       as-child
     >
-      <NuxtLink to="/releases">
+      <NuxtLink :to="workspace.path('releases')">
         <ArrowLeft class="size-4" />
         All releases
       </NuxtLink>
     </Button>
     <template v-if="release">
+      <header class="space-y-1.5">
+        <h1 class="font-heading text-2xl font-semibold tracking-[-0.035em]">
+          Release {{ release.version }}
+        </h1>
+        <p class="text-sm text-muted-foreground">
+          Created {{ formatDate(release.created_at) }} · Flutter revision
+          <code class="text-xs">{{ release.flutter_revision }}</code>
+        </p>
+      </header>
       <DeploymentHistory
         :key="release.id"
         :release="release"
@@ -54,11 +56,8 @@ watch(
       />
       <Card>
         <CardHeader>
-          <CardTitle>{{ release.version }}</CardTitle>
-          <CardDescription>
-            Created {{ formatDate(release.created_at) }} · Flutter revision
-            {{ release.flutter_revision }}
-          </CardDescription>
+          <CardTitle>Baseline artifacts</CardTitle>
+          <CardDescription>The immutable builds that patches are compared against.</CardDescription>
         </CardHeader>
         <CardContent>
           <div class="mb-5 flex flex-wrap gap-2">
@@ -114,7 +113,7 @@ watch(
     <Card v-else>
       <EmptyState
         title="Release not found"
-        description="The requested release is not present in this workspace."
+        description="The requested release is not part of this application."
       />
     </Card>
   </div>

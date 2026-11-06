@@ -28,11 +28,32 @@ app/
 
 Within a feature, keep components, composables, queries/mutations, stores, and entity types in separate folders as needed. Components render data and invoke composables; they do not issue raw HTTP requests. Entity schemas validate server responses with Zod.
 
-Pinia Colada owns remote session and catalog data, loading/errors, mutations, and invalidation. Pinia stores only application selection, mobile navigation, reporting-period preferences, and the session cache generation. Do not duplicate server responses in ordinary stores.
+Pinia Colada owns remote session and catalog data, loading/errors, mutations, and invalidation. Pinia stores only mobile navigation, reporting-period preferences, and the session cache generation. The current application is never stored: it comes from the URL. Do not duplicate server responses in ordinary stores.
+
+## Navigation model
+
+The console is application-scoped, in the style of Vercel and Supabase project dashboards. The URL says which application you are working in, so every link is shareable and reload-safe.
+
+```text
+/login, /setup                          sign-in and first-run setup
+/                                       applications dashboard (grid or list, search)
+/new                                    create an application
+/apps/:appId                            overview (getting started until the first release)
+/apps/:appId/releases[/:id]             baselines and release detail
+/apps/:appId/patches                    promote, roll back, restore, inspect assets
+/apps/:appId/analytics                  device telemetry
+/apps/:appId/settings                   general, API keys, GitHub
+/settings/...                           server-wide: connection, storage, accounts, audit
+/account, /docs                         your account and the public documentation
+```
+
+The header holds the Saturn mark, a searchable application switcher that keeps you on the same kind of page, and the account menu. The application's `shorebird.yaml` lives in **Settings → General** and in the getting-started checklist. The sidebar follows the route: workspace items outside an application, application items inside one. `useWorkspace()` derives the application and all of its releases, patches, channels, artifacts, and events from `route.params.appId`.
+
+Pre-scoped addresses such as `/releases`, `/patches`, and `/settings/management/api-keys` are forwarded by `middleware/legacy-routes.global.ts`.
 
 ## Components and styles
 
-The shadcn-vue 2.8.2 CLI generated the `reka-nova` components and neutral theme recorded in `components.json`. Use those primitives for buttons, dialogs, dropdown menus, selects, sheets, tables, and alerts. Application selection and channel selection use `Select`; patch actions use `DropdownMenu`, with a separate confirmation `Dialog`.
+The shadcn-vue 2.8.2 CLI generated the `reka-nova` components and neutral theme recorded in `components.json`. Use those primitives for buttons, dialogs, dropdown menus, selects, sheets, tables, and alerts. The application switcher is a searchable `DropdownMenu`; the reporting period and channel selection use `Select`; patch actions use `DropdownMenu`, with a separate confirmation `Dialog`.
 
 Use the generated semantic tokens such as `background`, `foreground`, `muted`, `border`, and `primary`. Use Tailwind utilities for page layout. Do not add parallel CSS rules that restyle library controls, menus, or table primitives.
 
@@ -82,7 +103,7 @@ At migration validation, `npm audit` still reports the unpatched [node-forge sig
 
 ## Inspect patch assets
 
-Open **Patches** and select **Inspect** in the **Assets** column. The dialog provides a searchable file list, bounded image/text previews, platform selection, the bundle SHA-256, and an authenticated ZIP download. Binary manifests and fonts show metadata. See the [asset update guide](../docs/asset-support.md) for the full publishing, inspection, testing, and promotion workflow. [Using Saturn with Shorebird](../docs/usage.md) explains which steps differ from regular hosted Shorebird.
+Open an application, then **Patches**, and select **Inspect** in the **Assets** column. The dialog provides a searchable file list, bounded image/text previews, platform selection, the bundle SHA-256, and an authenticated ZIP download. Binary manifests and fonts show metadata. See the [asset update guide](../docs/asset-support.md) for the full publishing, inspection, testing, and promotion workflow. [Using Saturn with Shorebird](../docs/usage.md) explains which steps differ from regular hosted Shorebird.
 
 ## Public web documentation
 

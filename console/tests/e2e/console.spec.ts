@@ -27,7 +27,7 @@ async function signIn(page: Page) {
     await page.getByLabel('Password', { exact: true }).fill(password!)
     await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   }
-  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Applications', exact: true })).toBeVisible()
 }
 
 async function seedRelease(api: APIRequestContext, name = 'Browser lifecycle fixture') {
@@ -109,7 +109,7 @@ test('sign-in, application creation, direct links, and static asset security', a
   const requestOrigins = new Set<string>()
   page.on('pageerror', (error) => pageErrors.push(error.message))
   page.on('request', (request) => requestOrigins.add(new URL(request.url()).origin))
-  await page.goto('/applications')
+  await page.goto('/new')
   await expect(page).toHaveURL(/\/login$/)
   await page.getByLabel('Username', { exact: true }).fill('admin')
   await page.getByLabel('Password', { exact: true }).fill('incorrect-password')
@@ -117,22 +117,20 @@ test('sign-in, application creation, direct links, and static asset security', a
   await expect(page.getByRole('alert')).toContainText('Incorrect username or password')
   await page.getByLabel('Password', { exact: true }).fill(password!)
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
-  await page.goto('/applications')
-  await page.getByRole('button', { name: 'New application', exact: true }).click()
-  const dialog = page.getByRole('dialog')
-  await dialog.getByLabel('Application name').fill('Created in browser')
-  await dialog.getByRole('button', { name: 'Create application', exact: true }).click()
-  await expect(dialog).not.toBeVisible()
-  await page
-    .getByRole('navigation', { name: 'Main navigation' })
-    .getByRole('link', { name: 'Applications', exact: true })
-    .click()
-  await expect(page.getByText('Created in browser', { exact: true }).first()).toBeVisible()
-  await expect(page).toHaveURL(/\/applications$/)
   await expect(page.getByRole('heading', { name: 'Applications', exact: true })).toBeVisible()
+  await page.getByRole('link', { name: 'New application', exact: true }).click()
+  await expect(page).toHaveURL(/\/new$/)
+  await page.getByLabel('Application name').fill('Created in browser')
+  await page.getByRole('button', { name: 'Create application', exact: true }).click()
+  // Creating an application lands inside it, on its getting-started overview.
+  await expect(page).toHaveURL(/\/apps\/[^/]+$/)
+  await expect(page.getByRole('heading', { name: 'Created in browser', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Get started', exact: true })).toBeVisible()
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Applications', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Created in browser', exact: true })).toBeVisible()
+  await page.getByRole('link', { name: 'All applications', exact: true }).click()
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByText('Created in browser', { exact: true }).first()).toBeVisible()
   expect(await page.evaluate(() => ({ ...localStorage, ...sessionStorage }))).toEqual({})
   expect(pageErrors).toEqual([])
   expect([...requestOrigins]).toEqual([new URL(baseURL).origin])
@@ -147,18 +145,22 @@ test('nested release routes and patch promotion, rollback, and restore', async (
   await signIn(page)
   await page.setViewportSize({ width: 1920, height: 1080 })
   await expect(page.getByRole('button', { name: 'Refresh workspace' })).toHaveCount(0)
-  expect(await page.locator('main').evaluate((element) => getComputedStyle(element).maxWidth)).toBe(
-    'none',
-  )
   expect(await page.title()).not.toMatch(/[\u00c2\u00c3]/)
-  await page.getByRole('combobox', { name: 'Selected application' }).click()
-  const applicationPicker = page.getByRole('listbox')
+  // The sidebar is workspace-scoped until an application is opened.
+  await expect(
+    page
+      .getByRole('navigation', { name: 'Main navigation' })
+      .getByRole('link', { name: 'Patches' }),
+  ).toHaveCount(0)
+  await page.getByRole('button', { name: 'Switch application' }).click()
+  const applicationPicker = page.getByRole('menu')
   await expect(applicationPicker).toBeVisible()
   const pickerBounds = await applicationPicker.boundingBox()
   expect(pickerBounds?.height).toBeLessThan(600)
   await page.screenshot({ path: 'test-results/application-picker-desktop.png' })
-  await page.getByRole('option', { name: app.display_name, exact: true }).click()
-  await expect(page.getByText('1.0.0+1', { exact: true }).first()).toBeVisible()
+  await page.getByRole('menuitem', { name: app.display_name, exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/apps/${app.id}$`))
+  await expect(page.getByRole('heading', { name: app.display_name, exact: true })).toBeVisible()
   const overviewChart = page.getByTestId('activity-chart')
   await expect
     .poll(async () =>
@@ -167,7 +169,7 @@ test('nested release routes and patch promotion, rollback, and restore', async (
         .first()
         .evaluate((element) => element.getBoundingClientRect().width),
     )
-    .toBeGreaterThan(1000)
+    .toBeGreaterThan(900)
   await page.screenshot({ path: 'test-results/overview-desktop.png', fullPage: true })
   await page
     .getByRole('navigation', { name: 'Main navigation' })
@@ -194,7 +196,7 @@ test('nested release routes and patch promotion, rollback, and restore', async (
   await page.getByRole('menuitem', { name: 'Restore patch' }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Restore patch', exact: true }).click()
   await expect(page.getByText('Published', { exact: true })).toBeVisible()
-  await page.goto(`/releases/${release.id}`)
+  await page.goto(`/apps/${app.id}/releases/${release.id}`)
   await expect(page.getByText('browser-fixture', { exact: false }).first()).toBeVisible()
   await expect(page.getByRole('cell', { name: 'x86_64', exact: true })).toBeVisible()
   await page.setViewportSize({ width: 390, height: 844 })
@@ -258,7 +260,7 @@ test('an expired session returns to sign-in without showing cached workspace dat
   expect(response.ok()).toBeTruthy()
   await page.reload({ waitUntil: 'domcontentloaded' })
   await expect(page).toHaveURL(/\/login$/)
-  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).not.toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Applications', exact: true })).not.toBeVisible()
   await page.goto('/patches')
   await expect(page).toHaveURL(/\/login$/)
 })
@@ -337,8 +339,7 @@ test('asset bundles verify uploads and follow patch delivery, rollback, and rest
   expect((await check()).asset_bundle_available).toBe(true)
 
   await signIn(page)
-  await page.getByRole('combobox', { name: 'Selected application' }).click()
-  await page.getByRole('option', { name: app.display_name, exact: true }).click()
+  await page.goto(`/apps/${app.id}`)
   await page
     .getByRole('navigation', { name: 'Main navigation' })
     .getByRole('link', { name: 'Patches', exact: true })

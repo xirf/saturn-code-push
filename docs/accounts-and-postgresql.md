@@ -10,7 +10,7 @@ No container shell or password-hashing command is needed. For local Compose, `sh
 
 The database URL and public origin remain deployment configuration: the server needs a database before onboarding can run. If `SETUP_TOKEN` is missing, the onboarding page explains how to configure it through deployment settings. The token is never returned by the status API or stored in browser storage. Setup requires the configured origin, applies login attempt/concurrency limits, and creates the account, session, and audit event in one database transaction. Concurrent requests can create only one first administrator.
 
-Setup closes once **any account** exists, including disabled accounts. Removing or changing the setup token never reopens registration. Remove `SETUP_TOKEN` from deployment settings after onboarding. Later users, roles, keys, and password changes are managed in **Settings**.
+Setup closes once **any account** exists, including disabled accounts. Removing or changing the setup token never reopens registration. Remove `SETUP_TOKEN` from deployment settings after onboarding. Later users, roles, keys, and password changes are managed in **Server settings**; API keys and the GitHub connection are managed inside each application's **Settings**.
 
 `ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH` and `set-login.sh` remain optional compatibility paths for automated first-account seeding. They seed only an empty account table and do not reset existing accounts. Public self-registration is not enabled.
 
@@ -39,7 +39,7 @@ This resets an existing account's password, revokes its sessions and keys, and r
 
 ## CI API keys
 
-In **Settings → API keys**, choose a name, application, permission and expiry (1–365 days):
+Open the application, then **Settings → API keys**. Keys are created inside the application they belong to; choose a name, permission and expiry (1–365 days):
 
 - **Report deployments** (`deployments:write`) can read and update deployment reports for its app.
 - **Publish** (`publish`) can manage releases, patches, channels, artifacts and deployment reports for its app. It can list its own app and read the minimal self-hosted CLI organization/plan responses.

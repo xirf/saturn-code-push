@@ -3,10 +3,12 @@ import { GitBranch } from '@lucide/vue'
 import EmptyState from '~/components/shared/EmptyState.vue'
 import { usePatchRows } from '../composables/usePatchRows'
 import PatchActions from './PatchActions.vue'
+import { useWorkspace } from '~/features/workspace/composables/useWorkspace'
 import PatchAssetsDialog from '~/features/artifacts/components/PatchAssetsDialog.vue'
 import type { Patch } from '../types/patch'
 
 const props = defineProps<{ patches: Patch[] }>()
+const workspace = useWorkspace()
 const rows = usePatchRows(toRef(props, 'patches'))
 </script>
 
@@ -36,7 +38,7 @@ const rows = usePatchRows(toRef(props, 'patches'))
         </TableCell>
         <TableCell>
           <NuxtLink
-            :to="`/releases/${patch.release_id}`"
+            :to="workspace.path(`releases/${patch.release_id}`)"
             class="font-mono text-xs hover:underline"
           >
             {{ releaseVersion }}

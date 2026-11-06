@@ -2,10 +2,12 @@
 import { ArrowUpRight, Layers } from '@lucide/vue'
 import { formatDate } from '~/lib/format'
 import EmptyState from '~/components/shared/EmptyState.vue'
+import { useWorkspace } from '~/features/workspace/composables/useWorkspace'
 import { useReleaseRows } from '../composables/useReleaseRows'
 import type { Release } from '../types/release'
 
 const props = defineProps<{ releases: Release[] }>()
+const workspace = useWorkspace()
 const rows = useReleaseRows(toRef(props, 'releases'))
 </script>
 
@@ -28,7 +30,7 @@ const rows = useReleaseRows(toRef(props, 'releases'))
       >
         <TableCell>
           <NuxtLink
-            :to="`/releases/${release.id}`"
+            :to="workspace.path(`releases/${release.id}`)"
             class="flex items-center gap-3 font-medium hover:underline"
           >
             <span class="rounded-md border bg-muted p-2"><Layers class="size-4" /></span>
@@ -62,7 +64,7 @@ const rows = useReleaseRows(toRef(props, 'releases'))
             as-child
           >
             <NuxtLink
-              :to="`/releases/${release.id}`"
+              :to="workspace.path(`releases/${release.id}`)"
               :aria-label="`View release ${release.version}`"
             >
               <ArrowUpRight class="size-4" />

@@ -35,7 +35,7 @@ GitHub login is not required. Existing Saturn accounts and roles continue to con
    | `GITHUB_WEBHOOK_SECRET` | The same secret configured on the GitHub App |
 
    Keep the private key and secret out of Git and browser inputs. The server runs as UID 10001; grant that user read access to the mounted key. The App private key grants access to its installations, so use an App controlled by this instance's operator.
-4. Open **Settings → GitHub integration → Install GitHub App**, choose the repositories it may access, and complete installation on GitHub.
+4. Open the application, then **Settings → GitHub → Install GitHub App**, choose the repositories it may access, and complete installation on GitHub.
 5. Copy the installation ID from the installation settings URL (`.../settings/installations/12345`). Back in Saturn, choose the application and enter `owner/repository` plus that ID. **Connect repository** verifies the configured App installation and repository access with GitHub before saving the association.
 
 Hosting platforms can mount their managed secrets directly. For local Compose, an optional override mounts an existing host key without copying it into the image:

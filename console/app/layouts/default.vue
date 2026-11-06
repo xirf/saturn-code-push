@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ChevronRight, Menu, UserRound } from '@lucide/vue'
+import { BookOpen, Menu, UserRound } from '@lucide/vue'
 import { ScrollArea } from '~/components/ui/scroll-area'
+import SaturnMark from '~/components/brand/SaturnMark.vue'
 import ConsoleNavigation from '~/components/shell/ConsoleNavigation.vue'
+import EmptyState from '~/components/shared/EmptyState.vue'
 import ErrorNotice from '~/components/shared/ErrorNotice.vue'
-import CreateApplicationDialog from '~/features/applications/components/CreateApplicationDialog.vue'
+import AppSwitcher from '~/features/workspace/components/AppSwitcher.vue'
 import { useWorkspace } from '~/features/workspace/composables/useWorkspace'
 import { useIdentity } from '~/features/identity/composables/useIdentity'
 import { usePreferencesStore } from '~/stores/preferences'
@@ -18,14 +20,12 @@ const catalog = workspace.query.data
 const loading = computed(() => workspace.query.asyncStatus.value === 'loading')
 const queryError = workspace.query.error
 const logoutError = ref('')
-const title = computed(() => String(route.meta.title ?? 'Overview'))
-const showApplicationPicker = computed(() =>
-  ['/', '/releases', '/patches', '/analytics'].includes(route.path),
+const inApplication = computed(() => typeof route.params.appId === 'string')
+const showSwitcher = computed(
+  () => inApplication.value || route.path === '/' || route.path === '/new',
 )
-const showCreateApplication = computed(
-  () =>
-    identity.session.data.value?.role === 'admin' &&
-    (route.path === '/applications' || !workspace.applications.value.length),
+const missingApplication = computed(
+  () => inApplication.value && Boolean(catalog.value) && !workspace.application.value,
 )
 
 async function signOut() {
@@ -50,8 +50,99 @@ async function signOut() {
       >
         Skip to content
       </a>
+      <header
+        class="sticky top-0 z-40 flex h-14 items-center justify-between gap-3 border-b bg-background/95 px-3 backdrop-blur sm:px-5"
+      >
+        <div class="flex min-w-0 items-center gap-1 sm:gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            class="shrink-0 lg:hidden"
+            aria-label="Open navigation"
+            @click="preferences.mobileNavigationOpen = true"
+          >
+            <Menu class="size-5" />
+          </Button>
+          <NuxtLink
+            to="/"
+            class="flex shrink-0 items-center gap-2 rounded-md px-1.5 py-1 hover:bg-muted"
+            aria-label="All applications"
+          >
+            <SaturnMark class="size-6 text-foreground" />
+            <span class="hidden font-heading text-sm font-semibold tracking-tight sm:block">
+              saturn
+            </span>
+          </NuxtLink>
+          <nav
+            aria-label="Breadcrumb"
+            class="flex min-w-0 items-center gap-1 sm:gap-2"
+          >
+            <span
+              class="text-lg font-light text-muted-foreground/40 select-none"
+              aria-hidden="true"
+            >
+              /
+            </span>
+            <AppSwitcher v-if="showSwitcher" />
+            <span
+              v-else
+              class="truncate text-sm font-medium"
+              aria-current="page"
+            >
+              {{ route.meta.crumb ?? route.meta.title ?? 'Console' }}
+            </span>
+          </nav>
+        </div>
+        <div class="flex shrink-0 items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            as-child
+            class="hidden sm:inline-flex"
+          >
+            <NuxtLink to="/docs">
+              <BookOpen class="size-3.5" />
+              Docs
+            </NuxtLink>
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Open account menu"
+              >
+                <UserRound class="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              class="w-56"
+            >
+              <DropdownMenuLabel>
+                <div class="font-medium">{{ user.username }}</div>
+                <div class="text-xs font-normal text-muted-foreground">{{ user.role }}</div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem as-child>
+                <NuxtLink to="/account">Account &amp; security</NuxtLink>
+              </DropdownMenuItem>
+              <DropdownMenuItem as-child>
+                <NuxtLink to="/settings">Server settings</NuxtLink>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                :disabled="identity.logout.asyncStatus.value === 'loading'"
+                @select="signOut"
+              >
+                Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </header>
       <aside
-        class="fixed inset-y-0 left-0 z-30 hidden w-56 border-r border-sidebar-border lg:block"
+        class="fixed top-14 bottom-0 left-0 z-30 hidden w-56 border-r border-sidebar-border lg:block"
       >
         <ConsoleNavigation />
       </aside>
@@ -70,152 +161,15 @@ async function signOut() {
           <ConsoleNavigation />
         </SheetContent>
       </Sheet>
-      <div class="min-w-0 lg:pl-56">
-        <header
-          class="sticky top-0 z-40 flex min-h-14 items-center justify-between gap-3 border-b bg-background/95 px-5 backdrop-blur sm:px-8"
-        >
-          <div class="flex min-w-0 items-center gap-2 sm:gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              class="shrink-0 lg:hidden"
-              aria-label="Open navigation"
-              @click="preferences.mobileNavigationOpen = true"
-            >
-              <Menu class="size-5" />
-            </Button>
-            <nav
-              aria-label="Breadcrumb"
-              class="flex min-w-0 items-center gap-2 text-sm sm:gap-3"
-            >
-              <NuxtLink
-                to="/"
-                class="shrink-0 text-muted-foreground hover:text-foreground"
-              >
-                Console
-              </NuxtLink>
-              <ChevronRight class="size-3 shrink-0 text-muted-foreground/50" />
-              <template v-if="route.path.startsWith('/settings/')">
-                <NuxtLink
-                  to="/settings"
-                  class="shrink-0 text-muted-foreground hover:text-foreground"
-                >
-                  Settings
-                </NuxtLink>
-                <ChevronRight class="size-4 shrink-0 text-muted-foreground/50" />
-                <template v-if="route.meta.settingsGroup">
-                  <span class="text-muted-foreground">
-                    {{ route.meta.settingsGroup }}
-                  </span>
-                  <ChevronRight class="size-4 text-muted-foreground/50" />
-                </template>
-              </template>
-              <span
-                class="min-w-0 truncate text-foreground"
-                aria-current="page"
-              >
-                {{ title }}
-              </span>
-            </nav>
-          </div>
-          <div class="flex shrink-0 items-center gap-2">
-            <span class="mr-2 hidden text-xs text-muted-foreground sm:block">
-              {{ user.username }}
-            </span>
-            <DropdownMenu>
-              <DropdownMenuTrigger as-child>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Open account menu"
-                >
-                  <UserRound class="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                class="w-56"
-              >
-                <DropdownMenuLabel>
-                  <div class="font-medium">{{ user.username }}</div>
-                  <div class="text-xs font-normal text-muted-foreground">{{ user.role }}</div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem as-child>
-                  <NuxtLink to="/account">Account &amp; security</NuxtLink>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  :disabled="identity.logout.asyncStatus.value === 'loading'"
-                  @select="signOut"
-                >
-                  Sign out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </header>
-        <main
-          id="main-content"
-          class="min-w-0 space-y-6 px-5 py-7 sm:px-8"
-        >
+      <main
+        id="main-content"
+        class="min-w-0 lg:pl-56"
+      >
+        <div class="mx-auto w-full max-w-6xl space-y-6 px-5 py-8 sm:px-8">
           <ErrorNotice
             v-if="logoutError"
             :message="logoutError"
           />
-          <div
-            v-if="!route.path.startsWith('/settings')"
-            :class="[
-              'flex flex-wrap items-end justify-between gap-5',
-              route.path === '/account' && 'mx-auto w-full max-w-5xl',
-            ]"
-          >
-            <div>
-              <h1 class="font-heading text-2xl font-semibold tracking-[-0.035em]">{{ title }}</h1>
-              <p class="mt-1.5 text-sm text-muted-foreground">{{ route.meta.description }}</p>
-            </div>
-            <div class="flex flex-wrap items-center gap-3">
-              <Select
-                v-if="route.path === '/analytics'"
-                :model-value="String(preferences.periodDays)"
-                @update:model-value="(value) => (preferences.periodDays = Number(value))"
-              >
-                <SelectTrigger
-                  class="w-40 text-sm"
-                  aria-label="Reporting period"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="7">Last 7 UTC days</SelectItem>
-                  <SelectItem value="14">Last 14 UTC days</SelectItem>
-                  <SelectItem value="30">Last 30 UTC days</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                v-if="showApplicationPicker && workspace.applications.value.length"
-                :model-value="workspace.appId.value"
-                @update:model-value="(value) => (preferences.selectedAppId = String(value))"
-              >
-                <SelectTrigger
-                  class="w-56"
-                  aria-label="Selected application"
-                >
-                  <SelectValue placeholder="Select application" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem
-                    v-for="app in workspace.applications.value"
-                    :key="app.id"
-                    :value="app.id"
-                  >
-                    {{ app.display_name }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <CreateApplicationDialog v-if="showCreateApplication" />
-            </div>
-          </div>
           <ErrorNotice
             v-if="queryError"
             :message="errorMessage(queryError)"
@@ -235,12 +189,26 @@ async function signOut() {
             role="status"
             aria-label="Loading workspace"
           >
+            <Skeleton class="h-10 w-64" />
             <Skeleton class="h-28 w-full" />
             <Skeleton class="h-80 w-full" />
           </div>
+          <Card v-else-if="missingApplication">
+            <EmptyState
+              title="Application not found"
+              description="This application does not exist on this server, or the link is out of date."
+            >
+              <Button
+                variant="outline"
+                as-child
+              >
+                <NuxtLink to="/">View all applications</NuxtLink>
+              </Button>
+            </EmptyState>
+          </Card>
           <slot v-else-if="catalog" />
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   </ScrollArea>
 </template>

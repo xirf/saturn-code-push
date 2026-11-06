@@ -19,7 +19,7 @@ test('administrators manage accounts and keys; viewers cannot publish', async ({
   await page.getByLabel('Username', { exact: true }).fill('admin')
   await page.getByLabel('Password', { exact: true }).fill(password!)
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Applications', exact: true })).toBeVisible()
   await page.goto('/settings')
   await page.getByRole('link', { name: 'Accounts Manage users' }).click()
   await page.getByRole('button', { name: 'New account', exact: true }).click()
@@ -30,10 +30,11 @@ test('administrators manage accounts and keys; viewers cannot publish', async ({
   await dialog.getByRole('button', { name: 'Save account' }).click()
   await expect(dialog).not.toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: username })).toContainText('viewer')
-  await page.goto('/settings/management/api-keys')
+  // Keys live inside their application; the dialog is already scoped to it.
+  await page.goto(`/apps/${app.id}/settings/api-keys`)
   await page.getByRole('button', { name: 'New API key', exact: true }).click()
   await page.getByLabel('Key name', { exact: true }).fill('Actions browser key')
-  await page.getByLabel('Application', { exact: true }).selectOption(app.id)
+  await expect(page.getByLabel('Application', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Create API key', exact: true }).click()
   const secret = page.getByRole('textbox', { name: 'New API key', exact: true })
   await expect(secret).toBeVisible()
@@ -56,9 +57,9 @@ test('administrators manage accounts and keys; viewers cannot publish', async ({
   await page.getByLabel('Username', { exact: true }).fill(username)
   await page.getByLabel('Password', { exact: true }).fill(password!)
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
-  await page.goto('/applications')
-  await expect(page.getByRole('button', { name: 'New application', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Applications', exact: true })).toBeVisible()
+  await page.goto('/')
+  await expect(page.getByRole('link', { name: 'New application', exact: true })).toHaveCount(0)
   await page.goto('/settings')
   await expect(page.getByRole('button', { name: 'New account', exact: true })).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'Accounts Manage users' })).toHaveCount(0)
@@ -76,7 +77,7 @@ test('settings provides focused destinations on desktop and mobile', async ({ pa
   await page.getByLabel('Username', { exact: true }).fill('admin')
   await page.getByLabel('Password', { exact: true }).fill(password!)
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Applications', exact: true })).toBeVisible()
   await page.goto('/settings')
   await expect(page.getByRole('heading', { name: 'Management', exact: true })).toBeVisible()
   await expect(page.locator('form')).toHaveCount(0)
@@ -114,11 +115,10 @@ test('settings provides focused destinations on desktop and mobile', async ({ pa
     '/settings',
     '/settings/account',
     '/settings/management/accounts',
-    '/settings/management/api-keys',
     '/settings/management/audit',
     '/settings/server/connection',
     '/settings/server/storage',
-    '/settings/integrations/github',
+    '/apps/missing/settings',
   ]) {
     await page.goto(path)
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
@@ -150,7 +150,7 @@ test('audit history loads on its own page and supports older and newer pages', a
   await page.getByLabel('Username', { exact: true }).fill('admin')
   await page.getByLabel('Password', { exact: true }).fill(password!)
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Applications', exact: true })).toBeVisible()
   await page.goto('/settings')
   await expect(page.getByRole('link', { name: 'Audit history Review changes' })).toBeVisible()
   expect(cursors).toEqual([])

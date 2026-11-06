@@ -25,7 +25,7 @@ async function signIn(page: Page) {
     await page.getByLabel('Password', { exact: true }).fill(password!)
     await submit.click()
   }
-  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Applications', exact: true })).toBeVisible()
 }
 
 test.beforeEach(async ({ page }) => {
@@ -67,10 +67,10 @@ test('interactive controls show pointer cursors and success toasts stay in the v
   expect(application.ok()).toBeTruthy()
   await signIn(page)
 
-  const picker = page.getByRole('combobox', { name: 'Selected application' })
+  const picker = page.getByRole('button', { name: 'Switch application' })
   await expect(picker).toHaveCSS('cursor', 'pointer')
   await picker.click()
-  const option = page.getByRole('option', { name: applicationName, exact: true })
+  const option = page.getByRole('menuitem', { name: applicationName, exact: true })
   await expect(option).toHaveCSS('cursor', 'pointer')
   await option.click()
 
@@ -79,7 +79,8 @@ test('interactive controls show pointer cursors and success toasts stay in the v
     .getByRole('link', { name: 'Settings', exact: true })
   await expect(settings).toHaveCSS('cursor', 'pointer')
   await settings.click()
-  await page.getByRole('link', { name: 'Connection & CLI Copy the API origin' }).click()
+  await expect(page.getByRole('heading', { name: 'General', exact: true })).toBeVisible()
+  await page.goto('/settings/server/connection')
   const copy = page.getByRole('button', { name: 'Copy API origin' })
   await expect(copy).toHaveCSS('cursor', 'pointer')
   const heightBefore = await page.evaluate(() => document.documentElement.scrollHeight)
@@ -102,7 +103,7 @@ test('error toasts are visible on mobile without increasing document height', as
   await page.setViewportSize({ width: 390, height: 844 })
   await signIn(page)
   await page.goto('/settings/server/connection')
-  await expect(page.getByRole('heading', { name: 'Connection & CLI', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'General', exact: true })).toBeVisible()
   await page.evaluate(() => Reflect.set(window, '__rejectClipboard', true))
   const heightBefore = await page.evaluate(() => document.documentElement.scrollHeight)
   await page.getByRole('button', { name: 'Copy API origin' }).click()

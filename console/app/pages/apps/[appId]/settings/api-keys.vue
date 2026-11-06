@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import AccessManagement from '~/features/access/components/AccessManagement.vue'
 import { useIdentity } from '~/features/identity/composables/useIdentity'
+
 definePageMeta({
   title: 'API keys',
-  description: 'Application-scoped credentials for publishing and deployment reporting.',
-  settingsGroup: 'Management',
+  description: 'Credentials for publishing and deployment reporting. Scoped to this application.',
 })
 const identity = useIdentity()
 </script>
+
 <template>
   <AccessManagement
     v-if="identity.session.data.value?.role === 'admin'"
@@ -18,6 +19,6 @@ const identity = useIdentity()
     role="alert"
     class="text-sm text-muted-foreground"
   >
-    Only administrators can manage api keys.
+    Only administrators can manage API keys.
   </p>
 </template>

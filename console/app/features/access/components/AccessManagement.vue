@@ -16,6 +16,20 @@ const accountOpen = ref(false)
 const editing = ref<Account | null>(null)
 const account = reactive({ username: '', password: '', role: 'viewer', disabled: false })
 const key = reactive({ name: '', app_id: '', permission: 'deployments:write', expires_in_days: 30 })
+// Inside /apps/:appId the keys section is scoped to that application.
+const scoped = computed(() => Boolean(workspace.appId.value))
+watch(
+  () => workspace.appId.value,
+  (id) => {
+    if (id) key.app_id = id
+  },
+  { immediate: true },
+)
+const visibleKeys = computed(() =>
+  (access.keys.data.value?.keys ?? []).filter(
+    (item) => !scoped.value || item.app_id === workspace.appId.value,
+  ),
+)
 const revealed = ref('')
 const revealOpen = ref(false)
 const keyOpen = ref(false)
@@ -183,22 +197,28 @@ async function changePassword() {
         id="api-keys"
         class="scroll-mt-6"
       >
-        <CardHeader>
-          <CardTitle>API keys</CardTitle>
-          <CardDescription>
-            Create an app-scoped key for CI. The full key is displayed once. Resetting or disabling
-            its creator revokes their keys.
-          </CardDescription>
+        <CardHeader class="flex flex-wrap items-start justify-between gap-4">
+          <div class="space-y-1.5">
+            <CardTitle>{{ scoped ? 'Keys for this application' : 'API keys' }}</CardTitle>
+            <CardDescription>
+              Create an app-scoped key for CI. The full key is displayed once. Resetting or
+              disabling its creator revokes their keys.
+            </CardDescription>
+          </div>
+          <Button @click="keyOpen = true">New API key</Button>
         </CardHeader>
         <CardContent class="space-y-5">
-          <Button @click="keyOpen = true">New API key</Button>
           <Dialog v-model:open="keyOpen">
             <DialogContent class="max-h-[90svh] overflow-hidden">
               <ScrollArea class="max-h-[80svh] w-full pr-3">
                 <DialogHeader>
                   <DialogTitle>New API key</DialogTitle>
                   <DialogDescription>
-                    Choose an application and the access this key needs.
+                    {{
+                      scoped
+                        ? `Choose the access this key needs for ${workspace.application.value?.display_name}.`
+                        : 'Choose an application and the access this key needs.'
+                    }}
                   </DialogDescription>
                 </DialogHeader>
                 <form
@@ -214,7 +234,10 @@ async function changePassword() {
                       placeholder="GitHub Actions"
                     />
                   </label>
-                  <label class="block space-y-2 text-sm">
+                  <label
+                    v-if="!scoped"
+                    class="block space-y-2 text-sm"
+                  >
                     Application
                     <Select
                       :model-value="key.app_id"
@@ -282,7 +305,14 @@ async function changePassword() {
               </ScrollArea>
             </DialogContent>
           </Dialog>
-          <div>
+          <p
+            v-if="!visibleKeys.length && !access.keys.asyncStatus.value.startsWith('loading')"
+            class="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground"
+          >
+            No API keys yet. Create a Publish key to let your CLI or CI release and patch this
+            application.
+          </p>
+          <div v-else>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -295,7 +325,7 @@ async function changePassword() {
               </TableHeader>
               <TableBody>
                 <TableRow
-                  v-for="item in access.keys.data.value?.keys"
+                  v-for="item in visibleKeys"
                   :key="item.id"
                 >
                   <TableCell>

@@ -15,7 +15,7 @@ test('first run creates the administrator in the browser and closes setup', asyn
   await page.getByLabel('Password', { exact: true }).fill(password!)
   await page.getByLabel('Confirm password', { exact: true }).fill(password!)
   await page.getByRole('button', { name: 'Create administrator', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Applications', exact: true })).toBeVisible()
   const session = await page.request.get('/auth/session')
   expect((await session.json()).role).toBe('admin')
   expect(

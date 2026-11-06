@@ -1,130 +1,255 @@
 <script setup lang="ts">
-import { ArrowUpRight, Layers } from '@lucide/vue'
-import EventStats from '~/features/telemetry/components/EventStats.vue'
-import ActivityChart from '~/features/telemetry/components/ActivityChart.vue'
-import ReleaseTable from '~/features/distribution/components/ReleaseTable.vue'
+import { ArrowUpRight, LayoutGrid, List, Plus, Rocket, Search } from '@lucide/vue'
+import { InputGroup, InputGroupAddon, InputGroupInput } from '~/components/ui/input-group'
+import AppAvatar from '~/components/shared/AppAvatar.vue'
 import EmptyState from '~/components/shared/EmptyState.vue'
+import PageHeader from '~/components/shared/PageHeader.vue'
+import { useIdentity } from '~/features/identity/composables/useIdentity'
 import { useWorkspace } from '~/features/workspace/composables/useWorkspace'
+import { formatDate } from '~/lib/format'
 
 definePageMeta({
   middleware: 'auth',
-  title: 'Overview',
-  description: 'Release activity for the selected application.',
+  title: 'Applications',
+  description: 'Every application served by this Saturn server.',
 })
 const workspace = useWorkspace()
-const latestRelease = computed(() => workspace.releases.value[0])
-const latestPatchCount = computed(
-  () =>
-    workspace.patches.value.filter((patch) => patch.release_id === latestRelease.value?.id).length,
-)
+const identity = useIdentity()
+const isAdmin = computed(() => identity.session.data.value?.role === 'admin')
+const search = ref('')
+const view = ref<'grid' | 'list'>('grid')
+
+const summaries = computed(() => {
+  const catalog = workspace.query.data.value
+  return workspace.applications.value
+    .filter((app) => app.display_name.toLowerCase().includes(search.value.trim().toLowerCase()))
+    .map((app) => {
+      const releases = (catalog?.releases ?? []).filter((release) => release.app_id === app.id)
+      const releaseIds = new Set(releases.map((release) => release.id))
+      const patches = (catalog?.patches ?? []).filter((patch) => releaseIds.has(patch.release_id))
+      const latest = releases.at(-1)
+      const live = patches.filter((patch) => !patch.is_rolled_back && patch.channel_ids.length)
+      return {
+        app,
+        latest,
+        releaseCount: releases.length,
+        patchCount: patches.length,
+        liveCount: live.length,
+        rolledBack: patches.filter((patch) => patch.is_rolled_back).length,
+      }
+    })
+})
+const total = computed(() => workspace.applications.value.length)
 </script>
 
 <template>
   <div class="space-y-6">
-    <EventStats />
-    <div class="grid gap-6 xl:grid-cols-[1fr_20rem]">
-      <ActivityChart />
-      <Card class="gap-5">
-        <CardHeader>
-          <CardDescription>Latest baseline</CardDescription>
-          <CardTitle class="font-heading text-xl">
-            {{ latestRelease?.version ?? 'No release yet' }}
-          </CardTitle>
-        </CardHeader>
-        <CardContent
-          v-if="latestRelease"
-          class="space-y-5"
-        >
-          <div class="flex flex-wrap gap-2">
-            <Badge
-              v-for="(platform, name) in latestRelease.platforms"
-              :key="name"
-              variant="outline"
-            >
-              <span
-                :class="platform.status === 'active' ? 'bg-emerald-400' : 'bg-muted-foreground'"
-                class="size-1.5 rounded-full"
-              />
-              {{ name }} · {{ platform.status }}
-            </Badge>
-          </div>
-          <dl class="space-y-3 text-xs">
-            <div class="flex items-center justify-between gap-3">
-              <dt class="text-muted-foreground">Flutter revision</dt>
-              <dd
-                class="max-w-40 truncate font-mono"
-                :title="latestRelease.flutter_revision"
-              >
-                {{ latestRelease.flutter_revision }}
-              </dd>
-            </div>
-            <div class="flex items-center justify-between">
-              <dt class="text-muted-foreground">Patches</dt>
-              <dd>{{ latestPatchCount }}</dd>
-            </div>
-            <div class="flex items-center justify-between">
-              <dt class="text-muted-foreground">Delivery channels</dt>
-              <dd>{{ workspace.channels.value.length }}</dd>
-            </div>
-          </dl>
-        </CardContent>
-        <CardContent
-          v-else
-          class="space-y-3 text-sm text-muted-foreground"
-        >
-          <Layers class="size-6" />
-          <p>Publish a baseline with the Saturn CLI to begin delivering patches.</p>
-        </CardContent>
-        <CardFooter class="mt-auto">
-          <Button
-            variant="outline"
-            class="w-full"
-            as-child
-          >
-            <NuxtLink :to="latestRelease ? `/releases/${latestRelease.id}` : '/releases'">
-              View release
-              <ArrowUpRight class="ml-auto size-4" />
-            </NuxtLink>
-          </Button>
-        </CardFooter>
-      </Card>
-    </div>
-    <Card>
-      <CardHeader>
-        <div class="flex items-center justify-between gap-4">
-          <div>
-            <CardTitle>Recent releases</CardTitle>
-            <CardDescription class="mt-1">
-              The five most recent baselines for this application.
-            </CardDescription>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            as-child
-          >
-            <NuxtLink to="/releases">
-              View all
-              <ArrowUpRight class="size-4" />
-            </NuxtLink>
-          </Button>
+    <PageHeader
+      title="Applications"
+      description="Pick an application to manage its releases, patches, and access."
+    >
+      <Button
+        v-if="isAdmin"
+        as-child
+      >
+        <NuxtLink to="/new">
+          <Plus class="size-4" />
+          New application
+        </NuxtLink>
+      </Button>
+    </PageHeader>
+
+    <Card v-if="!total">
+      <CardContent class="flex flex-col items-center gap-4 px-6 py-16 text-center">
+        <div class="rounded-2xl border bg-muted p-4"><Rocket class="size-8" /></div>
+        <div class="space-y-1.5">
+          <h2 class="font-heading text-xl font-semibold tracking-tight">
+            Create your first application
+          </h2>
+          <p class="mx-auto max-w-md text-sm leading-relaxed text-muted-foreground">
+            An application is one Flutter app and its releases, patches, channels, API keys, and
+            device analytics. Everything in Saturn lives inside one.
+          </p>
         </div>
-      </CardHeader>
-      <CardContent class="px-0">
-        <ReleaseTable
-          v-if="workspace.application.value"
-          :releases="workspace.releases.value.slice(0, 5)"
-        />
-        <EmptyState
+        <Button
+          v-if="isAdmin"
+          as-child
+        >
+          <NuxtLink to="/new">
+            <Plus class="size-4" />
+            New application
+          </NuxtLink>
+        </Button>
+        <p
           v-else
-          title="Your workspace starts here"
-          description="Create an application, then publish its baseline release with the CLI."
-        />
+          class="text-sm text-muted-foreground"
+        >
+          Ask a server administrator to create an application for you.
+        </p>
       </CardContent>
     </Card>
-    <p class="text-xs leading-relaxed text-muted-foreground">
-      Metrics cover client-reported events retained by this server. Reporting installs are distinct
-      IDs in this window, not total active devices.
-    </p>
+
+    <template v-else>
+      <div class="flex flex-wrap items-center gap-3">
+        <InputGroup class="w-full max-w-md flex-1">
+          <InputGroupInput
+            v-model="search"
+            class="pl-9"
+            aria-label="Search applications"
+            placeholder="Search applications…"
+          />
+          <InputGroupAddon><Search aria-hidden="true" /></InputGroupAddon>
+        </InputGroup>
+        <div
+          class="ml-auto flex rounded-md border p-0.5"
+          role="group"
+          aria-label="Layout"
+        >
+          <Button
+            :variant="view === 'grid' ? 'secondary' : 'ghost'"
+            size="icon-sm"
+            aria-label="Grid view"
+            :aria-pressed="view === 'grid'"
+            @click="view = 'grid'"
+          >
+            <LayoutGrid class="size-4" />
+          </Button>
+          <Button
+            :variant="view === 'list' ? 'secondary' : 'ghost'"
+            size="icon-sm"
+            aria-label="List view"
+            :aria-pressed="view === 'list'"
+            @click="view = 'list'"
+          >
+            <List class="size-4" />
+          </Button>
+        </div>
+      </div>
+
+      <ul
+        v-if="summaries.length && view === 'grid'"
+        class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+        aria-label="Applications"
+      >
+        <li
+          v-for="{ app, latest, releaseCount, patchCount, liveCount, rolledBack } in summaries"
+          :key="app.id"
+        >
+          <NuxtLink
+            :to="`/apps/${encodeURIComponent(app.id)}`"
+            class="group flex h-full flex-col gap-5 rounded-xl border bg-card p-5 transition-colors hover:border-foreground/30 hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            <div class="flex items-start gap-3">
+              <AppAvatar
+                :name="app.display_name"
+                :seed="app.id"
+                size="lg"
+              />
+              <div class="min-w-0 flex-1">
+                <h2 class="truncate font-heading text-base font-semibold">
+                  {{ app.display_name }}
+                </h2>
+                <p class="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                  {{ app.id }}
+                </p>
+              </div>
+              <ArrowUpRight
+                class="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+              />
+            </div>
+            <p class="text-sm">
+              <template v-if="latest">
+                <span class="font-mono">{{ latest.version }}</span>
+                <span class="text-muted-foreground">· latest release</span>
+              </template>
+              <span
+                v-else
+                class="text-muted-foreground"
+              >
+                No releases yet
+              </span>
+            </p>
+            <div class="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+              <span class="text-muted-foreground">
+                <span class="font-medium text-foreground tabular-nums">{{ releaseCount }}</span>
+                {{ releaseCount === 1 ? 'release' : 'releases' }}
+              </span>
+              <span class="text-muted-foreground">
+                <span class="font-medium text-foreground tabular-nums">{{ patchCount }}</span>
+                {{ patchCount === 1 ? 'patch' : 'patches' }}
+              </span>
+              <Badge
+                v-if="liveCount"
+                variant="secondary"
+              >
+                <span class="size-1.5 rounded-full bg-emerald-400" />
+                {{ liveCount }} live
+              </Badge>
+              <Badge
+                v-if="rolledBack"
+                variant="outline"
+              >
+                {{ rolledBack }} rolled back
+              </Badge>
+            </div>
+          </NuxtLink>
+        </li>
+      </ul>
+
+      <Card
+        v-else-if="summaries.length"
+        class="py-0"
+      >
+        <ul
+          class="divide-y"
+          aria-label="Applications"
+        >
+          <li
+            v-for="{ app, latest, releaseCount, patchCount, liveCount } in summaries"
+            :key="app.id"
+          >
+            <NuxtLink
+              :to="`/apps/${encodeURIComponent(app.id)}`"
+              class="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4 transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
+            >
+              <AppAvatar
+                :name="app.display_name"
+                :seed="app.id"
+              />
+              <span class="min-w-0 flex-1 basis-48">
+                <span class="block truncate text-sm font-medium">{{ app.display_name }}</span>
+                <span class="block truncate font-mono text-xs text-muted-foreground">
+                  {{ app.id }}
+                </span>
+              </span>
+              <span class="w-28 font-mono text-xs text-muted-foreground">
+                {{ latest?.version ?? 'No releases' }}
+              </span>
+              <span class="w-24 text-xs text-muted-foreground tabular-nums">
+                {{ releaseCount }} rel · {{ patchCount }} patch
+              </span>
+              <span class="w-20">
+                <Badge
+                  v-if="liveCount"
+                  variant="secondary"
+                >
+                  {{ liveCount }} live
+                </Badge>
+              </span>
+              <span class="w-24 text-xs text-muted-foreground">
+                {{ formatDate(app.created_at) }}
+              </span>
+            </NuxtLink>
+          </li>
+        </ul>
+      </Card>
+
+      <Card v-else>
+        <EmptyState
+          title="No matching applications"
+          :description="`Nothing matches “${search}”. Check the spelling or clear the search.`"
+        />
+      </Card>
+    </template>
   </div>
 </template>

@@ -30,6 +30,20 @@ const query = useQuery({
     schema.parse(await request('/admin/integrations/github', { signal })),
 })
 const form = reactive({ app_id: '', repository: '', installation_id: '' })
+// Inside /apps/:appId the connection is for that application only.
+const scoped = computed(() => Boolean(workspace.appId.value))
+watch(
+  () => workspace.appId.value,
+  (id) => {
+    if (id) form.app_id = id
+  },
+  { immediate: true },
+)
+const connections = computed(() =>
+  (query.data.value?.connections ?? []).filter(
+    (item) => !scoped.value || item.app_id === workspace.appId.value,
+  ),
+)
 const busy = ref(false)
 const error = ref('')
 const notice = ref('')
@@ -126,7 +140,10 @@ async function action(path: string, body: unknown) {
                     })
                   "
                 >
-                  <label class="space-y-2 text-sm">
+                  <label
+                    v-if="!scoped"
+                    class="space-y-2 text-sm"
+                  >
                     Application
                     <Select
                       :model-value="form.app_id"
@@ -192,8 +209,14 @@ async function action(path: string, body: unknown) {
             Refresh linked runs
           </Button>
         </template>
+        <p
+          v-if="scoped && !connections.length"
+          class="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground"
+        >
+          This application is not linked to a repository yet.
+        </p>
         <div
-          v-for="connection in query.data.value.connections"
+          v-for="connection in connections"
           :key="connection.app_id"
           class="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm"
         >

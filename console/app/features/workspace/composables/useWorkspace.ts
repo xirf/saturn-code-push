@@ -1,17 +1,21 @@
 import { computed } from 'vue'
-import { usePreferencesStore } from '~/stores/preferences'
 import { useCatalogQuery } from '../queries/catalog'
 
+/**
+ * Projections of the catalog for the application named in the URL (`/apps/:appId/...`).
+ * Outside an application route every list is empty and `application` is undefined.
+ */
 export function useWorkspace() {
   const query = useCatalogQuery()
-  const preferences = usePreferencesStore()
+  const route = useRoute()
   const applications = computed(() => query.data.value?.apps ?? [])
-  const application = computed(
-    () =>
-      applications.value.find((app) => app.id === preferences.selectedAppId) ??
-      applications.value[0],
-  )
+  const routeAppId = computed(() => {
+    const value = route.params.appId
+    return typeof value === 'string' ? value : ''
+  })
+  const application = computed(() => applications.value.find((app) => app.id === routeAppId.value))
   const appId = computed(() => application.value?.id ?? '')
+  const basePath = computed(() => `/apps/${encodeURIComponent(routeAppId.value)}`)
   const releases = computed(() =>
     (query.data.value?.releases ?? [])
       .filter((release) => release.app_id === appId.value)
@@ -38,11 +42,17 @@ export function useWorkspace() {
     (query.data.value?.events ?? []).filter((event) => event.event.app_id === appId.value),
   )
 
+  function path(section = '') {
+    return `${basePath.value}${section ? `/${section.replace(/^\//, '')}` : ''}`
+  }
+
   return {
     query,
     applications,
     application,
     appId,
+    basePath,
+    path,
     releases,
     patches,
     channels,

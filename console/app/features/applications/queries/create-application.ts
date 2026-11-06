@@ -1,14 +1,12 @@
 import { useMutation, useQueryCache } from '@pinia/colada'
 import { toast } from 'vue-sonner'
 import { request } from '~/lib/api/client'
-import { usePreferencesStore } from '~/stores/preferences'
 import { useSessionScope } from '~/features/identity/stores/session-scope'
 import { applicationSchema } from '../types/application'
 
 export function useCreateApplication() {
   const cache = useQueryCache()
   const scope = useSessionScope()
-  const preferences = usePreferencesStore()
 
   return useMutation({
     key: (input) => ['private', input.generation, 'create-application'],
@@ -21,9 +19,8 @@ export function useCreateApplication() {
       ),
       generation: input.generation,
     }),
-    onSuccess: async ({ app, generation }) => {
+    onSuccess: async ({ generation }) => {
       if (generation !== scope.generation) return
-      preferences.selectedAppId = app.id
       await cache.invalidateQueries({ key: ['private', generation] })
       toast.success('Application created', { description: 'Ready for its first release.' })
     },

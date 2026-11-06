@@ -27,7 +27,7 @@ The [Saturn package PR](https://github.com/xirf/shorebird/pull/1) adds `packages
 
 Deploy Saturn using the [Linux/Podman server guide](../server/README.md#start). Use Docker for the container development environment. The commands below are Bash commands for the machine or CI runner that builds your Flutter application; they do not require Flutter tooling inside the deployed server container.
 
-Sign in to the dashboard, open **Applications**, select **New application**, and copy its application ID. Use that ID in your Flutter project's `shorebird.yaml`:
+Sign in to the dashboard and select **New application**. Saturn opens the new application, whose getting-started checklist and **Settings → General** page show its application ID and a ready-made `shorebird.yaml`. Use that ID in your Flutter project's `shorebird.yaml`:
 
 ```yaml
 app_id: YOUR_SATURN_APP_ID
@@ -117,7 +117,7 @@ shorebird patch \
 
 For a patch with changed assets, use the [asset workflow](asset-support.md#publish-an-asset-update) instead; it adds `--allow-asset-diffs` and the ZIP upload.
 
-In Saturn, select the application and open **Releases** or **Patches**. Confirm the patch's release and uploaded artifacts. Use **Promote** to make the patch available on the selected channel. A patch uploaded to staging is already eligible for devices subscribed to staging; it is not available to stable devices until promoted there.
+In Saturn, open the application and go to **Releases** or **Patches**. Confirm the patch's release and uploaded artifacts. Use **Promote** to make the patch available on the selected channel. A patch uploaded to staging is already eligible for devices subscribed to staging; it is not available to stable devices until promoted there.
 
 Staging test devices must ask for the same channel in both the Shorebird updater and `SaturnAssets.load`. [Channel setup](../packages/saturn_assets/README.md#staging-and-update-checks) explains the manual updater calls. A downloaded code patch takes effect after an app restart; inspecting its files in the dashboard does not apply it to a device.
 
