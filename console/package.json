@@ -60,7 +60,7 @@
     "vitest": "^4.0.0",
     "vue-tsc": "^3.0.0"
   },
-  "license": "Apache-2.0",
+  "license": "LGPL-3.0-or-later",
   "overrides": {
     "@tailwindcss/typography": {
       "postcss-selector-parser": "^6.1.5"

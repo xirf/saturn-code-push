@@ -56,4 +56,4 @@ New guides must be registered in the documentation catalog. Run the console chec
 
 Use a concrete title and explain the problem, resulting behavior, and validation. Preserve existing user data and migration compatibility. Call out schema or public API changes. For a vulnerability, follow [Security](SECURITY.md) instead of posting exploit details publicly.
 
-Contributions are provided under the project's [Apache-2.0 license](LICENSE). Preserve applicable third-party notices.
+Contributions are provided under the project's [LGPL-3.0-or-later license](LICENSE). Preserve applicable third-party notices.

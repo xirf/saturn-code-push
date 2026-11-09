@@ -14,7 +14,7 @@ for (const page of documentationSources) {
   const contents = await readFile(path.join(repositoryRoot, page.source), 'utf8')
   const markdown =
     page.source === 'LICENSE'
-      ? ['# Apache License 2.0', '', '```text', contents, '```'].join('\n')
+      ? ['# GNU Lesser General Public License v3.0', '', '```text', contents, '```'].join('\n')
       : contents
   const rendered = renderDocumentation(markdown, page.source, routes)
   pages.push({ ...page, ...rendered })

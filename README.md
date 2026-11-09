@@ -71,4 +71,4 @@ See [Contributing](CONTRIBUTING.md) for formatting, linting, type checks, and te
 
 ## License
 
-[Apache License 2.0](LICENSE). Third-party libraries and fonts retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
+[GNU LGPL v3.0 or later](LICENSE). Third-party libraries and fonts retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).

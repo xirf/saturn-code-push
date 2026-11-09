@@ -173,7 +173,7 @@ Android has recorded device validation. iOS remains unverified. See [supported a
 
 ## License
 
-Apache-2.0. See the repository [license](../../LICENSE) and [third-party notices](../../THIRD_PARTY_NOTICES.md).
+LGPL-3.0-or-later. See the repository [license](../../LICENSE) and [third-party notices](../../THIRD_PARTY_NOTICES.md).
 
 ### Signed manifests and offline policy
 

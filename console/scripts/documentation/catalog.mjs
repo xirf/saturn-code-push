@@ -100,7 +100,7 @@ export const documentationSources = [
   {
     slug: 'license',
     title: 'License',
-    description: 'Apache License 2.0.',
+    description: 'GNU Lesser General Public License v3.0.',
     section: 'Project',
     source: 'LICENSE',
   },

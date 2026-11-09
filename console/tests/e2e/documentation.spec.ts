@@ -64,7 +64,7 @@ test('public documentation works on mobile and links back to sign-in', async ({ 
   await expect(dialog).toBeVisible()
   await dialog.getByRole('link', { name: 'License', exact: true }).click()
   await expect(dialog).not.toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Apache License 2.0', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'GNU Lesser General Public License v3.0', exact: true })).toBeVisible()
   await page.screenshot({ path: 'test-results/documentation-mobile.png' })
   await page.getByRole('link', { name: 'Open console', exact: true }).click()
   await expect(page).toHaveURL(/\/login$/)
