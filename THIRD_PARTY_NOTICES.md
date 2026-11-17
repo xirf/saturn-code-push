@@ -1,6 +1,6 @@
 # Third-party notices
 
-Saturn's original source is licensed under [LGPL-3.0-or-later](LICENSE). Dependencies and bundled third-party assets retain their respective licenses.
+Saturn's original source is licensed under [LGPL-3.0-or-later](LICENSE), except `packages/saturn_assets`, which is licensed under the [MIT License](packages/saturn_assets/LICENSE). Dependencies and bundled third-party assets retain their respective licenses.
 
 ## Bundled console assets
 

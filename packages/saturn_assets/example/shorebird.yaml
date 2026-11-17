@@ -1,0 +1,4 @@
+# Replace with the app ID from your Saturn console.
+app_id: YOUR_SATURN_APP_ID
+# Point the Shorebird updater at your Saturn server.
+base_url: https://updates.example.com

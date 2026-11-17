@@ -1,0 +1,23 @@
+name: saturn_assets_example
+description: Loads Saturn asset overlays for the running Shorebird patch.
+publish_to: none
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  saturn_assets:
+    path: ../
+  shorebird_code_push: ^2.0.7
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - shorebird.yaml
+    - assets/

@@ -5,3 +5,5 @@ Third-party components and fonts retain their own licenses.
 See THIRD_PARTY_NOTICES.md and console/public/licenses/.
 
 Licensed under the GNU LGPL v3.0 or later. See LICENSE and COPYING (GPL-3.0).
+The Flutter package in packages/saturn_assets is licensed under the MIT
+License. See packages/saturn_assets/LICENSE.

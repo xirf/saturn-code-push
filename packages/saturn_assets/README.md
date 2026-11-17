@@ -1,41 +1,29 @@
-# Saturn assets: Flutter integration
+# saturn_assets
+
+[![pub package](https://img.shields.io/pub/v/saturn_assets.svg)](https://pub.dev/packages/saturn_assets)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/xirf/saturn-code-push/blob/main/packages/saturn_assets/LICENSE)
 
 `saturn_assets` overlays Flutter assets for the Shorebird patch currently running on an Android device. It supplies a patched `AssetManifest.bin` and changed/new files through `DefaultAssetBundle`. Shorebird still handles the Dart patch; this package handles the separate asset ZIP served by Saturn.
 
-For the complete build, upload, inspect, and promotion sequence, use the [asset update guide](../../docs/asset-support.md). For the differences from hosted Shorebird, start with [Using Saturn with Shorebird](../../docs/usage.md).
+For the complete build, upload, inspect, and promotion sequence, use the [asset update guide](https://github.com/xirf/saturn-code-push/blob/main/docs/asset-support.md). For the differences from hosted Shorebird, start with [Using Saturn with Shorebird](https://github.com/xirf/saturn-code-push/blob/main/docs/usage.md).
 
 ## Installation
 
 Add the package **before building the baseline store release**. It uses `path_provider`, so adding it to a Dart patch is not sufficient for releases missing the native plugin registration.
 
-For an application beside this Saturn checkout, merge these dependencies into its `pubspec.yaml` and adjust the relative path as needed:
+```bash
+flutter pub add saturn_assets shorebird_code_push
+```
+
+Or add it to `pubspec.yaml` yourself:
 
 ```yaml
 dependencies:
-  flutter:
-    sdk: flutter
+  saturn_assets: ^0.1.0
   shorebird_code_push: ^2.0.7
-  saturn_assets:
-    path: ../saturn-code-push/packages/saturn_assets
 ```
 
-For an application that does not have this checkout available, the same package can be fetched from the [Shorebird fork PR](https://github.com/xirf/shorebird/pull/1). Replace the path dependency with a Git dependency pinned to the reviewed commit:
-
-```yaml
-saturn_assets:
-  git:
-    url: https://github.com/xirf/shorebird.git
-    ref: 1625363cc53c4091f88d5a3daaa8de9b12fb5c6d
-    path: packages/saturn_assets
-```
-
-Use one dependency source, not both. The PR adds a package; it does not change CLI patch behavior. No forked CLI is required for the overlay itself. Upgrading this dependency does not automatically update already installed store releases.
-
-Fetch dependencies with a Flutter SDK compatible with the application’s SDK constraints:
-
-```bash
-flutter pub get
-```
+No forked Shorebird CLI is required for the overlay. Upgrading this dependency does not automatically update already installed store releases.
 
 Also include `shorebird.yaml` and your application assets in the application's Flutter asset declaration:
 
@@ -167,14 +155,14 @@ The loader verifies the manifest's Ed25519 signature against the baseline-pinned
 
 A successful server response reporting no bundle uses packaged assets. A failed request selects packaged assets. The loader never selects extracted cached overlays offline.
 
-Use HTTPS. Asset metadata is not independently signed yet: SHA-256 detects a mismatch against that metadata, but does not protect against a compromised server replacing both. Signing Dart code patches does not sign the asset ZIP.
+Use HTTPS. The signed manifest binds the app, release, patch, platform, ZIP SHA-256, and size, so a server without the private key cannot substitute a different ZIP. Signing Dart code patches does not sign the asset ZIP; assets use their own Ed25519 key.
 
-Android has recorded device validation. iOS remains unverified. See [supported access and limitations](../../docs/asset-support.md#supported-asset-access).
-
-## License
-
-LGPL-3.0-or-later. See the repository [license](../../LICENSE) and [third-party notices](../../THIRD_PARTY_NOTICES.md).
+Android has recorded device validation. iOS remains unverified. See [supported access and limitations](https://github.com/xirf/saturn-code-push/blob/main/docs/asset-support.md#supported-asset-access).
 
 ### Signed manifests and offline policy
 
-`trustedPublicKey` is required. Define `pinnedAssetPublicKey` as a 32-byte `Uint8List` compiled into the app, never fetched from Saturn. See [signed publishing](../../docs/asset-support.md#signed-asset-publishing) for key provisioning and publisher flags. This is a breaking API change requiring a new baseline release. Every startup downloads and verifies an Ed25519 manifest and ZIP; unsigned metadata, network errors and rollback responses select packaged assets. Previously extracted files are not reused offline. Handle missing new assets before enabling features that require them. Signed content does not prove freshness against a compromised server replaying old responses.
+`trustedPublicKey` is required. Define `pinnedAssetPublicKey` as a 32-byte `Uint8List` compiled into the app, never fetched from Saturn. See [signed publishing](https://github.com/xirf/saturn-code-push/blob/main/docs/asset-support.md#signed-asset-publishing) for key provisioning and publisher flags. Every startup downloads and verifies an Ed25519 manifest and ZIP; unsigned metadata, network errors and rollback responses select packaged assets. Previously extracted files are not reused offline. Handle missing new assets before enabling features that require them. Signed content does not prove freshness against a compromised server replaying old responses.
+
+## License
+
+MIT. See [LICENSE](https://github.com/xirf/saturn-code-push/blob/main/packages/saturn_assets/LICENSE). The Saturn server and console are licensed separately under LGPL-3.0-or-later.

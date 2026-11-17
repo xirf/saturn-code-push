@@ -1,9 +1,21 @@
 name: saturn_assets
-description: Downloaded Flutter asset overlays for Saturn and Shorebird patches.
+description: >-
+  Signed, downloadable Flutter asset overlays for apps updated with Shorebird
+  code push and served by a self-hosted Saturn update server.
 version: 0.1.0
-publish_to: none
+repository: https://github.com/xirf/saturn-code-push/tree/main/packages/saturn_assets
+issue_tracker: https://github.com/xirf/saturn-code-push/issues
+documentation: https://github.com/xirf/saturn-code-push/blob/main/docs/asset-support.md
+topics:
+  - assets
+  - code-push
+  - shorebird
+  - ota-update
+
 environment:
   sdk: ^3.9.0
+  flutter: ">=3.35.0"
+
 dependencies:
   flutter:
     sdk: flutter
@@ -11,6 +23,8 @@ dependencies:
   crypto: ^3.0.7
   cryptography: ^2.9.0
   path_provider: ^2.1.6
+
 dev_dependencies:
+  flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter

@@ -1,3 +1,11 @@
+/// Signed, downloadable Flutter asset overlays for Shorebird patches served by
+/// a Saturn update server.
+///
+/// Call [SaturnAssets.load] before `runApp`, then install
+/// [SaturnAssets.bundle] with a `DefaultAssetBundle` so widgets read patched
+/// assets and fall back to the packaged ones.
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -12,14 +20,31 @@ import 'package:path_provider/path_provider.dart';
 class SaturnAssets {
   const SaturnAssets._(this.bundle, this.patchNumber, this.source);
 
+  /// The asset bundle to install with `DefaultAssetBundle`.
+  ///
+  /// This is a [SaturnAssetBundle] when a verified overlay was downloaded, or
+  /// the base bundle (usually [rootBundle]) otherwise.
   final AssetBundle bundle;
+
+  /// The Shorebird patch number the assets were resolved for.
+  ///
+  /// `0` means no patch is running.
   final int patchNumber;
+
+  /// Where [bundle] comes from: `'downloaded'` for a verified overlay, or
+  /// `'base'` for the packaged assets.
   final String source;
 
   static final Set<String> _loadedFonts = <String>{};
 
   /// Registers an OTF or TTF file from the active overlay with Flutter.
-  /// Call this before building text or icons that use [family].
+  ///
+  /// Call this before building text or icons that use [family]. [asset] is the
+  /// logical asset key, such as `assets/fonts/patched.ttf`. Repeated calls with
+  /// the same arguments for the same patch are ignored.
+  ///
+  /// Throws an [ArgumentError] if [family] is blank or [asset] is not a safe
+  /// relative path, and rethrows any error from loading the font data.
   Future<void> loadFont({required String family, required String asset}) async {
     if (family.trim().isEmpty || !_safePath(asset)) {
       throw ArgumentError('Font family and asset path must be valid');
@@ -35,8 +60,29 @@ class SaturnAssets {
     }
   }
 
-  /// Call this before runApp, after ShorebirdUpdater.readCurrentPatch().
-  /// The bundle must be installed with DefaultAssetBundle in MaterialApp.builder.
+  /// Resolves the asset overlay for the patch currently running on the device.
+  ///
+  /// Call this before `runApp`, after `ShorebirdUpdater.readCurrentPatch()`,
+  /// and install the resulting [bundle] with `DefaultAssetBundle` in
+  /// `MaterialApp.builder`.
+  ///
+  /// [server], [appId], [releaseVersion], and [channel] must match the code
+  /// updater of the running app. [platform] is the Saturn platform name, such
+  /// as `android`. [patchNumber] is the running patch, or `0` when none is
+  /// running.
+  ///
+  /// [trustedPublicKey] is the 32-byte Ed25519 public key compiled into the
+  /// baseline release. It is used to verify the server's signed manifest and
+  /// must never be fetched from the server.
+  ///
+  /// [base] is the packaged bundle to fall back to (defaults to [rootBundle]).
+  /// [cacheDirectory] overrides where overlays are extracted (defaults to the
+  /// application support directory). [fetch] replaces the HTTP client, which is
+  /// mainly useful in tests; it must return at most `maxBytes` bytes.
+  ///
+  /// This method fails closed. Network errors, invalid or unsigned metadata,
+  /// and hash mismatches return the packaged assets with [source] set to
+  /// `'base'`. It throws an [ArgumentError] only for invalid arguments.
   static Future<SaturnAssets> load({
     required Uri server,
     required String appId,
@@ -50,17 +96,23 @@ class SaturnAssets {
     Future<Uint8List> Function(Uri uri, int maxBytes)? fetch,
   }) async {
     if (trustedPublicKey.length != 32) {
-      throw ArgumentError('Expected a baseline-pinned 32-byte Ed25519 public key');
+      throw ArgumentError(
+        'Expected a baseline-pinned 32-byte Ed25519 public key',
+      );
     }
     base ??= rootBundle;
     if (patchNumber < 1) return SaturnAssets._(base, patchNumber, 'base');
     for (final value in [appId, releaseVersion, platform, channel]) {
       if (!_safePath(value) || value.contains('/')) {
-        throw ArgumentError('Asset identity must be a single safe path component');
+        throw ArgumentError(
+          'Asset identity must be a single safe path component',
+        );
       }
     }
     final cache = cacheDirectory ?? await getApplicationSupportDirectory();
-    final root = Directory('${cache.path}/saturn_assets/$appId/$releaseVersion/$platform/$channel/$patchNumber');
+    final root = Directory(
+      '${cache.path}/saturn_assets/$appId/$releaseVersion/$platform/$channel/$patchNumber',
+    );
     fetch ??= (uri, maxBytes) => _get(uri, maxBytes: maxBytes);
     final query = <String, String>{
       'app_id': appId,
@@ -69,9 +121,14 @@ class SaturnAssets {
       'platform': platform,
       'patch_number': '$patchNumber',
     };
-    final endpoint = server.resolve('/api/v1/assets/check').replace(queryParameters: query);
+    final endpoint = server
+        .resolve('/api/v1/assets/check')
+        .replace(queryParameters: query);
     try {
-      final response = await fetch(endpoint, 65536).timeout(const Duration(seconds: 30));
+      final response = await fetch(
+        endpoint,
+        65536,
+      ).timeout(const Duration(seconds: 30));
       final data = jsonDecode(utf8.decode(response)) as Map<String, dynamic>;
       if (data['asset_bundle_available'] != true) {
         return SaturnAssets._(base, patchNumber, 'base');
@@ -79,33 +136,52 @@ class SaturnAssets {
       final hash = data['sha256'] as String;
       final size = data['size'] as int;
       final url = Uri.parse(data['download_url'] as String);
-      if (url.scheme != 'https' && !(server.scheme == 'http' && url.scheme == 'http')) {
+      if (url.scheme != 'https' &&
+          !(server.scheme == 'http' && url.scheme == 'http')) {
         throw const FormatException('Asset URL must use HTTPS');
       }
-      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(hash) || size < 1 || size > 32 * 1024 * 1024) {
+      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(hash) ||
+          size < 1 ||
+          size > 32 * 1024 * 1024) {
         throw const FormatException('Invalid asset bundle metadata');
       }
       final manifest = jsonEncode([
-        'saturn-assets-v1', appId, releaseVersion, patchNumber, platform, hash, size,
+        'saturn-assets-v1',
+        appId,
+        releaseVersion,
+        patchNumber,
+        platform,
+        hash,
+        size,
       ]);
       if (data['manifest'] != manifest ||
           !await signing.Ed25519().verify(
             utf8.encode(manifest),
             signature: signing.Signature(
               base64Decode(data['signature'] as String),
-              publicKey: signing.SimplePublicKey(trustedPublicKey, type: signing.KeyPairType.ed25519),
+              publicKey: signing.SimplePublicKey(
+                trustedPublicKey,
+                type: signing.KeyPairType.ed25519,
+              ),
             ),
           )) {
         throw const FormatException('Untrusted asset manifest');
       }
       {
-        final bytes = await fetch(url, size).timeout(const Duration(seconds: 60));
+        final bytes = await fetch(
+          url,
+          size,
+        ).timeout(const Duration(seconds: 60));
         if (bytes.length != size || sha256.convert(bytes).toString() != hash) {
           throw const FormatException('Asset bundle SHA-256 mismatch');
         }
         await _extract(bytes, root, hash);
       }
-      return SaturnAssets._(SaturnAssetBundle(root, base), patchNumber, 'downloaded');
+      return SaturnAssets._(
+        SaturnAssetBundle(root, base),
+        patchNumber,
+        'downloaded',
+      );
     } catch (_) {
       // Fail closed: a cached pointer is not evidence that this channel still
       // authorizes the patch. Online authorization is required on every load.
@@ -116,9 +192,14 @@ class SaturnAssets {
 
 /// Loads files from a verified patch overlay and falls back to the packaged app.
 class SaturnAssetBundle extends CachingAssetBundle {
+  /// Creates a bundle that reads overlaid files from [directory] and falls
+  /// back to [base].
   SaturnAssetBundle(this.directory, this.base);
 
+  /// The extracted overlay directory, containing a `files/` subdirectory.
   final Directory directory;
+
+  /// The bundle used for keys not present in the overlay.
   final AssetBundle base;
 
   @override
@@ -137,7 +218,9 @@ bool _safePath(String name) =>
     !name.startsWith('/') &&
     !name.contains('\\') &&
     !name.contains(':') &&
-    name.split('/').every((part) => part.isNotEmpty && part != '.' && part != '..');
+    name
+        .split('/')
+        .every((part) => part.isNotEmpty && part != '.' && part != '..');
 
 Future<Uint8List> _get(Uri uri, {required int maxBytes}) async {
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
@@ -145,7 +228,10 @@ Future<Uint8List> _get(Uri uri, {required int maxBytes}) async {
     final request = await client.getUrl(uri);
     final response = await request.close();
     if (response.statusCode != HttpStatus.ok) {
-      throw HttpException('Asset request returned ${response.statusCode}', uri: uri);
+      throw HttpException(
+        'Asset request returned ${response.statusCode}',
+        uri: uri,
+      );
     }
     final output = BytesBuilder(copy: false);
     await for (final chunk in response) {
@@ -184,7 +270,9 @@ Future<void> _extract(Uint8List bytes, Directory root, String hash) async {
     if (!await File('${staging.path}/files/AssetManifest.bin').exists()) {
       throw const FormatException('AssetManifest.bin missing from archive');
     }
-    await File('${staging.path}/active.json').writeAsString(jsonEncode({'sha256': hash}), flush: true);
+    await File(
+      '${staging.path}/active.json',
+    ).writeAsString(jsonEncode({'sha256': hash}), flush: true);
     if (await root.exists()) await root.delete(recursive: true);
     await staging.rename(root.path);
   } catch (_) {
