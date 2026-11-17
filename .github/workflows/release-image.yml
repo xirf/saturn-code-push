@@ -1,0 +1,137 @@
+name: Release image
+
+# Builds and publishes the server container image (Rust server + Nuxt console)
+# to GitHub Container Registry when a release tag such as v1.2.3 is pushed.
+# Package tags such as saturn_assets-v0.1.0 do not match and are ignored.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to rebuild (for example v0.1.0)
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-image-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  RELEASE_REF: ${{ github.event.inputs.tag || github.ref }}
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Prepare
+        run: |
+          echo "IMAGE=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+          platform='${{ matrix.platform }}'
+          echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_REF }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: server/Dockerfile
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
+
+      - name: Export digest
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          digest='${{ steps.build.outputs.digest }}'
+          touch "${RUNNER_TEMP}/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish manifest
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Prepare
+        run: echo "IMAGE=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v5
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # v1.2.3 -> 1.2.3, 1.2, 1 and latest; prereleases (v1.2.3-rc.1) get only
+      # their exact version and do not move latest.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=auto
+          tags: |
+            type=semver,pattern={{version}},value=${{ env.RELEASE_TAG }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.RELEASE_TAG }}
+            type=semver,pattern={{major}},value=${{ env.RELEASE_TAG }}
+
+      - name: Create and push manifest list
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "${IMAGE}@sha256:%s " *)
+
+      - name: Inspect image
+        run: docker buildx imagetools inspect "${IMAGE}:${{ steps.meta.outputs.version }}"
