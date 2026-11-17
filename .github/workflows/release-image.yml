@@ -1,13 +1,12 @@
 name: Release image
 
 # Builds and publishes the server container image (Rust server + Nuxt console)
-# to GitHub Container Registry when a release tag such as v1.2.3 is pushed.
-# Package tags such as saturn_assets-v0.1.0 do not match and are ignored.
+# to GitHub Container Registry when a GitHub release such as v1.2.3 is
+# published. Releases whose tag is not vX.Y.Z (for example
+# saturn_assets-v0.1.0) are skipped.
 on:
-  push:
-    tags:
-      - "v[0-9]+.[0-9]+.[0-9]+"
-      - "v[0-9]+.[0-9]+.[0-9]+-*"
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -18,17 +17,18 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-image-${{ github.event.inputs.tag || github.ref_name }}
+  group: release-image-${{ github.event.inputs.tag || github.event.release.tag_name }}
   cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
-  RELEASE_REF: ${{ github.event.inputs.tag || github.ref }}
-  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
 
 jobs:
   build:
     name: Build ${{ matrix.platform }}
+    if: >-
+      startsWith(github.event.inputs.tag || github.event.release.tag_name, 'v')
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -50,7 +50,7 @@ jobs:
 
       - uses: actions/checkout@v5
         with:
-          ref: ${{ env.RELEASE_REF }}
+          ref: refs/tags/${{ env.RELEASE_TAG }}
 
       - uses: docker/setup-buildx-action@v3
 

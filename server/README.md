@@ -30,7 +30,7 @@ For application developers, [Using Saturn with Shorebird](../docs/usage.md) cove
 
 ## Prebuilt images
 
-Each release tag (`v1.2.3`) publishes a multi-architecture (`linux/amd64`, `linux/arm64`) image built from `server/Dockerfile` to GitHub Container Registry:
+Each published GitHub release tagged `v1.2.3` publishes a multi-architecture (`linux/amd64`, `linux/arm64`) image built from `server/Dockerfile` to GitHub Container Registry:
 
 ```sh
 podman pull ghcr.io/xirf/saturn-code-push:1.2.3
@@ -38,7 +38,7 @@ podman pull ghcr.io/xirf/saturn-code-push:1.2.3
 
 Tags follow the release version: `1.2.3`, `1.2`, `1`, and `latest` for stable releases. Prereleases such as `v1.2.3-rc.1` publish only their exact version. To run a prebuilt image with Compose, replace the `build:` block of the `code-push` service with `image: ghcr.io/xirf/saturn-code-push:<version>`.
 
-Maintainers cut a release by pushing a tag: `git tag -a v1.2.3 -m v1.2.3 && git push origin v1.2.3`. The [release workflow](../.github/workflows/release-image.yml) can also rebuild an existing tag from the Actions tab.
+Maintainers cut a release with `gh release create v1.2.3 --generate-notes` (or from the GitHub Releases page). The [release workflow](../.github/workflows/release-image.yml) can also rebuild an existing tag from the Actions tab.
 
 ## Features
 
