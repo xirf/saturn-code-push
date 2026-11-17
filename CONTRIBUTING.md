@@ -56,4 +56,4 @@ New guides must be registered in the documentation catalog. Run the console chec
 
 Use a concrete title and explain the problem, resulting behavior, and validation. Preserve existing user data and migration compatibility. Call out schema or public API changes. For a vulnerability, follow [Security](SECURITY.md) instead of posting exploit details publicly.
 
-Contributions are provided under the project's [LGPL-3.0-or-later license](LICENSE), except contributions to `packages/saturn_assets`, which are provided under its [MIT License](packages/saturn_assets/LICENSE). Preserve applicable third-party notices.
+Contributions are provided under the project's [LGPL-3.0-or-later license](LICENSE), except contributions to `packages/saturn_assets`, which are provided under its [MIT License](https://github.com/xirf/saturn-code-push/blob/main/packages/saturn_assets/LICENSE). Preserve applicable third-party notices.

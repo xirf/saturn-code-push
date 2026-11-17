@@ -38,7 +38,7 @@ podman pull ghcr.io/xirf/saturn-code-push:1.2.3
 
 Tags follow the release version: `1.2.3`, `1.2`, `1`, and `latest` for stable releases. Prereleases such as `v1.2.3-rc.1` publish only their exact version. To run a prebuilt image with Compose, replace the `build:` block of the `code-push` service with `image: ghcr.io/xirf/saturn-code-push:<version>`.
 
-Maintainers cut a release with `gh release create v1.2.3 --generate-notes` (or from the GitHub Releases page). The [release workflow](../.github/workflows/release-image.yml) can also rebuild an existing tag from the Actions tab.
+Maintainers cut a release with `gh release create v1.2.3 --generate-notes` (or from the GitHub Releases page). The [release workflow](https://github.com/xirf/saturn-code-push/blob/main/.github/workflows/release-image.yml) can also rebuild an existing tag from the Actions tab.
 
 ## Features
 
